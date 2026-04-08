@@ -32,7 +32,11 @@ interface ProjectState {
   /** Persist layout changes from the drag-and-drop grid */
   saveLayout: (id: string, layout: GridItem[]) => void;
   /** Reorder both widgets and layout arrays after drag-and-drop */
-  reorderWidgets: (id: string, widgets: DashWidget[], layout: GridItem[]) => void;
+  reorderWidgets: (
+    id: string,
+    widgets: DashWidget[],
+    layout: GridItem[],
+  ) => void;
   /** Update a single widget's height after resize */
   resizeWidget: (id: string, widgetId: string, height: number) => void;
   addWidget: (id: string, widget: DashWidget, gridItem: GridItem) => void;

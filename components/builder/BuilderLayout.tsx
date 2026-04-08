@@ -23,7 +23,8 @@ export default function BuilderLayout({ projectId }: Props) {
     updateApiUrl,
     updateName,
     applyConfig,
-    saveLayout,
+    reorderWidgets,
+    resizeWidget,
     addWidget,
     removeWidget,
   } = useProjectStore();
@@ -88,8 +89,12 @@ export default function BuilderLayout({ projectId }: Props) {
     });
   };
 
-  const handleLayoutChange = (newLayout: GridItem[]) => {
-    saveLayout(projectId, newLayout);
+  const handleReorder = (newWidgets: DashWidget[], newLayout: GridItem[]) => {
+    reorderWidgets(projectId, newWidgets, newLayout);
+  };
+
+  const handleResizeWidget = (widgetId: string, height: number) => {
+    resizeWidget(projectId, widgetId, height);
   };
 
   const handleAddWidget = (widget: DashWidget, gridItem: GridItem) => {
@@ -99,9 +104,6 @@ export default function BuilderLayout({ projectId }: Props) {
   const handleRemoveWidget = (widgetId: string) => {
     removeWidget(projectId, widgetId);
   };
-
-  // Compute bottom-most y position for stacking new widgets
-  const nextY = project.layout.reduce((max, l) => Math.max(max, l.y + l.h), 0);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50">
@@ -261,7 +263,6 @@ export default function BuilderLayout({ projectId }: Props) {
           data={project.data}
           existingWidgetIds={new Set(project.widgets.map((w) => w.id))}
           onAdd={handleAddWidget}
-          nextY={nextY}
         />
 
         <div className="flex-1 overflow-auto">
@@ -269,8 +270,9 @@ export default function BuilderLayout({ projectId }: Props) {
             widgets={project.widgets}
             layout={project.layout}
             data={project.data}
-            onLayoutChange={handleLayoutChange}
+            onReorder={handleReorder}
             onRemoveWidget={handleRemoveWidget}
+            onResizeWidget={handleResizeWidget}
           />
         </div>
       </div>

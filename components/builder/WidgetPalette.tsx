@@ -8,7 +8,6 @@ interface Props {
   data: Dataset;
   existingWidgetIds: Set<string>;
   onAdd: (widget: DashWidget, gridItem: GridItem) => void;
-  nextY: number; // current bottom of the grid to stack new widgets
 }
 
 // Available "blank" widget templates
@@ -34,19 +33,16 @@ const WIDGET_TEMPLATES: Array<{
   { type: "table", icon: "🗂", label: "Table", description: "Raw data view" },
 ];
 
-function defaultGridItem(
-  type: DashWidget["type"],
-  y: number,
-): Omit<GridItem, "i"> {
+function defaultGridItem(type: DashWidget["type"]): Omit<GridItem, "i"> {
   switch (type) {
     case "kpi":
-      return { x: 0, y, w: 3, h: 2, minW: 2, minH: 2 };
+      return { span: 3, height: 120 };
     case "line":
-      return { x: 0, y, w: 6, h: 4, minW: 3, minH: 3 };
+      return { span: 6, height: 280 };
     case "bar":
-      return { x: 0, y, w: 6, h: 4, minW: 3, minH: 3 };
+      return { span: 6, height: 280 };
     case "table":
-      return { x: 0, y, w: 12, h: 5, minW: 4, minH: 3 };
+      return { span: 12, height: 320 };
   }
 }
 
@@ -107,12 +103,11 @@ export default function WidgetPalette({
   data,
   existingWidgetIds,
   onAdd,
-  nextY,
 }: Props) {
   const handleAdd = (type: DashWidget["type"]) => {
     const id = `${type}-${Date.now().toString(36)}`;
     const widget = buildWidget(type, data, id);
-    const pos = defaultGridItem(type, nextY);
+    const pos = defaultGridItem(type);
     onAdd(widget, { i: id, ...pos });
   };
 
