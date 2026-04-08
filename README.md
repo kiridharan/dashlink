@@ -121,8 +121,7 @@ dashlink/
 │   ├── projects/[id]/page.tsx  # Dashboard builder
 │   ├── view/[id]/page.tsx      # Public viewer
 │   └── api/
-│       └── data/               # Server-side data proxy
-│           └── mcp/            # (reserved for MCP integration)
+│       ├── proxy/                   # Data proxy endpoint
 │
 ├── components/
 │   ├── auth/                   # AuthCard (login/signup form)
@@ -162,12 +161,6 @@ dashlink/
 │   │   ├── auth-store.ts       # Zustand auth store
 │   │   ├── project-store.ts    # Zustand project store
 │   │   └── provider.tsx        # Store hydration wrapper
-│   ├── ai/                     # (reserved for AI generation)
-│   ├── data/                   # (reserved for data adapters)
-│   └── mcp/                    # (reserved for MCP integration)
-│
-├── supabase/                   # Future Supabase config
-│   └── migrations/
 │
 ├── next.config.ts
 ├── tailwind.config.ts
