@@ -41,6 +41,8 @@ function defaultGridItem(type: DashWidget["type"]): Omit<GridItem, "i"> {
       return { span: 6, height: 280 };
     case "bar":
       return { span: 6, height: 280 };
+    case "pie":
+      return { span: 6, height: 280 };
     case "table":
       return { span: 12, height: 320 };
   }
@@ -59,6 +61,8 @@ function buildWidget(
         return { id, type, x: "x", y: "y", label: "Line" };
       case "bar":
         return { id, type, x: "x", y: "y", label: "Bar" };
+      case "pie":
+        return { id, type, category: "x", value: "y", label: "Pie" };
       case "table":
         return { id, type };
     }
@@ -93,6 +97,14 @@ function buildWidget(
         x: xField,
         y: yField,
         label: `${formatLabel(yField)} by ${formatLabel(xField)}`,
+      };
+    case "pie":
+      return {
+        id,
+        type,
+        category: xField,
+        value: yField,
+        label: `${formatLabel(xField)} breakdown`,
       };
     case "table":
       return { id, type };

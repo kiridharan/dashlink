@@ -27,12 +27,13 @@ import KpiWidgetCard from "./widgets/KpiWidgetCard";
 import LineWidgetChart from "./widgets/LineWidgetChart";
 import BarWidgetChart from "./widgets/BarWidgetChart";
 import TableWidgetView from "./widgets/TableWidgetView";
+import PieWidgetChart from "./widgets/PieWidgetChart";
 
 // ---- Span → Tailwind col-span class map ----
 const SPAN_CLASS: Record<number, string> = {
-  3:  "col-span-3  sm:col-span-3",
-  4:  "col-span-4  sm:col-span-4",
-  6:  "col-span-6  sm:col-span-6",
+  3: "col-span-3  sm:col-span-3",
+  4: "col-span-4  sm:col-span-4",
+  6: "col-span-6  sm:col-span-6",
   12: "col-span-12 sm:col-span-12",
 };
 function spanClass(span: number): string {
@@ -40,12 +41,24 @@ function spanClass(span: number): string {
 }
 
 // ---- Widget content resolver ----
-function WidgetContent({ widget, data }: { widget: DashWidget; data: Dataset }) {
+function WidgetContent({
+  widget,
+  data,
+}: {
+  widget: DashWidget;
+  data: Dataset;
+}) {
   switch (widget.type) {
-    case "kpi":   return <KpiWidgetCard widget={widget} data={data} />;
-    case "line":  return <LineWidgetChart widget={widget} data={data} />;
-    case "bar":   return <BarWidgetChart widget={widget} data={data} />;
-    case "table": return <TableWidgetView widget={widget} data={data} />;
+    case "kpi":
+      return <KpiWidgetCard widget={widget} data={data} />;
+    case "line":
+      return <LineWidgetChart widget={widget} data={data} />;
+    case "bar":
+      return <BarWidgetChart widget={widget} data={data} />;
+    case "pie":
+      return <PieWidgetChart widget={widget} data={data} />;
+    case "table":
+      return <TableWidgetView widget={widget} data={data} />;
   }
 }
 
@@ -59,9 +72,22 @@ interface TileProps {
   isDragging?: boolean;
 }
 
-function SortableTile({ widget, gridItem, data, onRemove, onResize, isDragging }: TileProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } =
-    useSortable({ id: widget.id });
+function SortableTile({
+  widget,
+  gridItem,
+  data,
+  onRemove,
+  onResize,
+  isDragging,
+}: TileProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isSortableDragging,
+  } = useSortable({ id: widget.id });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -82,9 +108,13 @@ function SortableTile({ widget, gridItem, data, onRemove, onResize, isDragging }
         maxHeight={700}
         enable={{
           bottom: true,
-          top: false, left: false, right: false,
-          topLeft: false, topRight: false,
-          bottomLeft: false, bottomRight: false,
+          top: false,
+          left: false,
+          right: false,
+          topLeft: false,
+          topRight: false,
+          bottomLeft: false,
+          bottomRight: false,
         }}
         onResizeStop={(_e, _dir, _ref, d) => {
           onResize(widget.id, gridItem.height + d.height);
@@ -107,10 +137,22 @@ function SortableTile({ widget, gridItem, data, onRemove, onResize, isDragging }
           >
             <div className="flex items-center gap-2 select-none">
               {/* 6-dot drag icon */}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className="text-zinc-300">
-                <circle cx="2.5" cy="2.5" r="1"/><circle cx="6" cy="2.5" r="1"/><circle cx="9.5" cy="2.5" r="1"/>
-                <circle cx="2.5" cy="6"   r="1"/><circle cx="6" cy="6"   r="1"/><circle cx="9.5" cy="6"   r="1"/>
-                <circle cx="2.5" cy="9.5" r="1"/><circle cx="6" cy="9.5" r="1"/><circle cx="9.5" cy="9.5" r="1"/>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="currentColor"
+                className="text-zinc-300"
+              >
+                <circle cx="2.5" cy="2.5" r="1" />
+                <circle cx="6" cy="2.5" r="1" />
+                <circle cx="9.5" cy="2.5" r="1" />
+                <circle cx="2.5" cy="6" r="1" />
+                <circle cx="6" cy="6" r="1" />
+                <circle cx="9.5" cy="6" r="1" />
+                <circle cx="2.5" cy="9.5" r="1" />
+                <circle cx="6" cy="9.5" r="1" />
+                <circle cx="9.5" cy="9.5" r="1" />
               </svg>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
                 {widget.type}
@@ -118,15 +160,28 @@ function SortableTile({ widget, gridItem, data, onRemove, onResize, isDragging }
             </div>
             {/* Resize indicator */}
             <div className="flex items-center gap-3">
-              <span className="text-[10px] text-zinc-300">{gridItem.height}px</span>
+              <span className="text-[10px] text-zinc-300">
+                {gridItem.height}px
+              </span>
               <button
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => onRemove(widget.id)}
                 className="rounded p-0.5 text-zinc-300 opacity-0 transition hover:bg-red-50 hover:text-red-400 group-hover:opacity-100"
                 aria-label="Remove widget"
               >
-                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  width="12"
+                  height="12"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -162,7 +217,7 @@ export default function GridCanvas({
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
   if (widgets.length === 0) {
@@ -170,15 +225,19 @@ export default function GridCanvas({
       <div className="flex h-full min-h-[400px] items-center justify-center rounded-2xl border-2 border-dashed border-zinc-200 bg-white">
         <div className="text-center">
           <div className="mb-3 text-3xl">📊</div>
-          <p className="text-sm font-medium text-zinc-500">Paste a URL above and hit Generate</p>
-          <p className="mt-1 text-xs text-zinc-400">or add widgets from the palette →</p>
+          <p className="text-sm font-medium text-zinc-500">
+            Add widgets from the fields panel
+          </p>
+          <p className="mt-1 text-xs text-zinc-400">
+            Use the sidebar on the left →
+          </p>
         </div>
       </div>
     );
   }
 
   const activeWidget = activeId ? widgets.find((w) => w.id === activeId) : null;
-  const activeItem   = activeId ? layout.find((l) => l.i === activeId) : null;
+  const activeItem = activeId ? layout.find((l) => l.i === activeId) : null;
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(event.active.id);
@@ -194,7 +253,7 @@ export default function GridCanvas({
     if (oldIdx === -1 || newIdx === -1) return;
 
     const newWidgets = arrayMove(widgets, oldIdx, newIdx);
-    const newLayout  = arrayMove(layout, oldIdx, newIdx);
+    const newLayout = arrayMove(layout, oldIdx, newIdx);
     onReorder(newWidgets, newLayout);
   }
 
@@ -229,7 +288,10 @@ export default function GridCanvas({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext items={widgets.map((w) => w.id)} strategy={rectSortingStrategy}>
+        <SortableContext
+          items={widgets.map((w) => w.id)}
+          strategy={rectSortingStrategy}
+        >
           <div className="grid grid-cols-12 gap-3">
             {widgets.map((widget) => {
               const item = layout.find((l) => l.i === widget.id);

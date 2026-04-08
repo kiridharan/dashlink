@@ -1,14 +1,14 @@
 // Widget types used by the drag-and-drop dashboard builder
 
-export type WidgetType = "kpi" | "line" | "bar" | "table";
+export type WidgetType = "kpi" | "line" | "bar" | "pie" | "table";
 
 // ---- Size descriptor ----
 // `span`  : how many of 12 virtual columns the widget occupies
 // `height`: pixel height — user-resizable
 export interface GridItem {
-  i: string;       // widget id
-  span: number;    // 1–12 column span
-  height: number;  // px height
+  i: string; // widget id
+  span: number; // 1–12 column span
+  height: number; // px height
 }
 
 // ---- Widget configs ----
@@ -35,20 +35,34 @@ export interface BarWidget {
   label: string;
 }
 
+export interface PieWidget {
+  id: string;
+  type: "pie";
+  category: string;
+  value: string;
+  label: string;
+}
+
 export interface TableWidget {
   id: string;
   type: "table";
   columns?: string[];
 }
 
-export type DashWidget = KpiWidget | LineWidget | BarWidget | TableWidget;
+export type DashWidget =
+  | KpiWidget
+  | LineWidget
+  | BarWidget
+  | PieWidget
+  | TableWidget;
 
 // ---- Conversion helper: DashboardConfig → initial widgets + layout ----
 import type { DashboardConfig } from "./types";
 
-export function configToWidgets(
-  config: DashboardConfig
-): { widgets: DashWidget[]; layout: GridItem[] } {
+export function configToWidgets(config: DashboardConfig): {
+  widgets: DashWidget[];
+  layout: GridItem[];
+} {
   const widgets: DashWidget[] = [];
   const layout: GridItem[] = [];
 
@@ -63,9 +77,29 @@ export function configToWidgets(
   config.charts.forEach((chart) => {
     const id = `chart-${chart.type}-${chart.x}-${chart.y}`;
     if (chart.type === "line") {
-      widgets.push({ id, type: "line", x: chart.x, y: chart.y, label: chart.label });
+      widgets.push({
+        id,
+        type: "line",
+        x: chart.x,
+        y: chart.y,
+        label: chart.label,
+      });
+    } else if (chart.type === "pie") {
+      widgets.push({
+        id,
+        type: "pie",
+        category: chart.x,
+        value: chart.y,
+        label: chart.label,
+      });
     } else {
-      widgets.push({ id, type: "bar", x: chart.x, y: chart.y, label: chart.label });
+      widgets.push({
+        id,
+        type: "bar",
+        x: chart.x,
+        y: chart.y,
+        label: chart.label,
+      });
     }
     layout.push({ i: id, span: 6, height: 280 });
   });

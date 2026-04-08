@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { Dataset, DashboardConfig } from "@/lib/dashlink/types";
+import type {
+  Dataset,
+  DashboardConfig,
+  AuthConfig,
+} from "@/lib/dashlink/types";
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
 import { configToWidgets } from "@/lib/dashlink/builder-types";
 import { DEMO_SALES_DATA } from "@/lib/dashlink/dummy-data";
@@ -9,6 +13,10 @@ export interface Project {
   id: string;
   name: string;
   apiUrl: string;
+  /** Authentication config for this project's API */
+  authConfig: AuthConfig;
+  /** Dot-notation path into the JSON response that holds the data array ("\ = root) */
+  dataPath: string;
   createdAt: string;
   /** Schema config derived from the API data */
   config: DashboardConfig | null;
@@ -16,7 +24,7 @@ export interface Project {
   widgets: DashWidget[];
   /** Grid positions */
   layout: GridItem[];
-  /** Data for rendering charts (demo data while backend is pending) */
+  /** Data for rendering charts */
   data: Dataset;
 }
 
@@ -24,9 +32,21 @@ interface ProjectState {
   projects: Project[];
   // Actions
   createProject: (name: string) => string;
+  /** Create a fully-configured project (wizard flow) */
+  createProjectFull: (
+    name: string,
+    apiUrl: string,
+    auth: AuthConfig,
+    dataPath: string,
+    widgets: DashWidget[],
+    layout: GridItem[],
+    data: Dataset,
+  ) => string;
   deleteProject: (id: string) => void;
   updateName: (id: string, name: string) => void;
   updateApiUrl: (id: string, apiUrl: string) => void;
+  updateAuth: (id: string, auth: AuthConfig) => void;
+  updateDataPath: (id: string, dataPath: string) => void;
   /** Populate widgets + layout from generated config */
   applyConfig: (id: string, config: DashboardConfig, data: Dataset) => void;
   /** Persist layout changes from the drag-and-drop grid */
@@ -60,11 +80,35 @@ export const useProjectStore = create<ProjectState>()(
               id,
               name: name || `Dashboard ${new Date().toLocaleDateString()}`,
               apiUrl: "",
+              authConfig: { type: "none" },
+              dataPath: "",
               createdAt: new Date().toISOString(),
               config: null,
               widgets: [],
               layout: [],
               data: [],
+            },
+            ...s.projects,
+          ],
+        }));
+        return id;
+      },
+
+      createProjectFull(name, apiUrl, auth, dataPath, widgets, layout, data) {
+        const id = uid();
+        set((s) => ({
+          projects: [
+            {
+              id,
+              name: name || `Dashboard ${new Date().toLocaleDateString()}`,
+              apiUrl,
+              authConfig: auth,
+              dataPath,
+              createdAt: new Date().toISOString(),
+              config: null,
+              widgets,
+              layout,
+              data,
             },
             ...s.projects,
           ],
@@ -85,6 +129,22 @@ export const useProjectStore = create<ProjectState>()(
       updateApiUrl(id, apiUrl) {
         set((s) => ({
           projects: s.projects.map((p) => (p.id === id ? { ...p, apiUrl } : p)),
+        }));
+      },
+
+      updateAuth(id, auth) {
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === id ? { ...p, authConfig: auth } : p,
+          ),
+        }));
+      },
+
+      updateDataPath(id, dataPath) {
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === id ? { ...p, dataPath } : p,
+          ),
         }));
       },
 

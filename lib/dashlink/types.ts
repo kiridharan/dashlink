@@ -7,10 +7,28 @@ export type DataRow = Record<string, DataValue>;
 export type Dataset = DataRow[];
 
 // ---------------------------------------------------------------------------
+// API authentication config
+// ---------------------------------------------------------------------------
+
+export type AuthType = "none" | "bearer" | "apikey" | "basic";
+
+export interface AuthConfig {
+  type: AuthType;
+  /** Header name for API key auth (default: "X-API-Key") */
+  headerName?: string;
+  /** Bearer token or API key value */
+  token?: string;
+  /** Basic auth username */
+  username?: string;
+  /** Basic auth password */
+  password?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Chart / dashboard config
 // ---------------------------------------------------------------------------
 
-export type ChartType = "line" | "bar";
+export type ChartType = "line" | "bar" | "pie";
 
 export interface ChartConfig {
   type: ChartType;

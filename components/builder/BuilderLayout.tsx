@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useProjectStore, type Project } from "@/lib/store/project-store";
 import { useAuthStore } from "@/lib/store/auth-store";
-import { detectSchema } from "@/lib/dashlink/schema-detection";
-import { DEMO_SALES_DATA } from "@/lib/dashlink/dummy-data";
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
 import GridCanvas from "./GridCanvas";
-import WidgetPalette from "./WidgetPalette";
+import FieldPanel from "./FieldPanel";
 
 interface Props {
   projectId: string;
@@ -31,10 +29,7 @@ export default function BuilderLayout({ projectId }: Props) {
 
   const project = projects.find((p) => p.id === projectId);
 
-  const [apiUrl, setApiUrl] = useState(project?.apiUrl ?? "");
   const [title, setTitle] = useState(project?.name ?? "");
-  const [generating, setGenerating] = useState(false);
-  const [genError, setGenError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
 
@@ -51,30 +46,6 @@ export default function BuilderLayout({ projectId }: Props) {
   if (!user || !project) return null;
 
   // ---- Handlers ----
-
-  const handleGenerate = async () => {
-    if (!apiUrl.trim()) return;
-    setGenError(null);
-    setGenerating(true);
-
-    try {
-      new URL(apiUrl);
-    } catch {
-      setGenError("Please enter a valid URL.");
-      setGenerating(false);
-      return;
-    }
-
-    // Persist the URL
-    updateApiUrl(projectId, apiUrl.trim());
-
-    // UI-only: use demo data + schema detection
-    await new Promise((r) => setTimeout(r, 600)); // simulate network
-
-    const config = detectSchema(DEMO_SALES_DATA, apiUrl.trim());
-    applyConfig(projectId, config, DEMO_SALES_DATA);
-    setGenerating(false);
-  };
 
   const handleTitleSave = () => {
     updateName(projectId, title.trim() || "Untitled Dashboard");
@@ -225,42 +196,34 @@ export default function BuilderLayout({ projectId }: Props) {
 
         {/* ---- URL generate bar ---- */}
         <div className="border-t border-zinc-100 px-5 py-2.5">
-          <div className="flex items-center gap-2">
-            <div className="flex flex-1 items-center overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition focus-within:border-zinc-400 focus-within:bg-white">
-              <span className="px-3 text-xs text-zinc-400 select-none">
-                GET
-              </span>
-              <input
-                type="url"
-                value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-                placeholder="https://api.example.com/v1/data"
-                className="flex-1 bg-transparent py-2 pr-3 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
-              />
-            </div>
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !apiUrl.trim()}
-              className="flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50"
-            >
-              {generating ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              ) : (
-                "Generate →"
-              )}
-            </button>
-          </div>
-          {genError && (
-            <p className="mt-1.5 text-xs text-red-500">{genError}</p>
+          <p
+            className="truncate font-mono text-xs text-zinc-400"
+            title={project.apiUrl}
+          >
+            {project.apiUrl ? (
+              project.apiUrl.replace(/^https?:\/\//, "")
+            ) : (
+              <span className="italic">No data source configured</span>
+            )}
+          </p>
+          {project.authConfig?.type && project.authConfig.type !== "none" && (
+            <span className="mt-1 inline-flex items-center rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] text-zinc-500">
+              {project.authConfig.type === "bearer"
+                ? "Bearer"
+                : project.authConfig.type === "apikey"
+                  ? "API Key"
+                  : "Basic Auth"}
+            </span>
           )}
         </div>
       </header>
 
       {/* ---- Builder body ---- */}
       <div className="flex flex-1 gap-5 p-5">
-        <WidgetPalette
+        <FieldPanel
           data={project.data}
+          apiUrl={project.apiUrl}
+          authType={project.authConfig?.type}
           existingWidgetIds={new Set(project.widgets.map((w) => w.id))}
           onAdd={handleAddWidget}
         />
