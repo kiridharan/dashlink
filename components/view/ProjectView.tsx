@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useProjectStore } from "@/lib/store/project-store";
-import DashboardRenderer from "@/components/dashlink/DashboardRenderer";
+import { getTheme } from "@/lib/dashlink/themes";
+import WidgetGrid from "./WidgetGrid";
 
 interface Props {
   projectId: string;
@@ -27,7 +28,7 @@ export default function ProjectView({ projectId }: Props) {
 
   const project = projects.find((p) => p.id === projectId);
 
-  if (!project || !project.config) {
+  if (!project || project.widgets.length === 0) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 text-center">
         <p className="text-base font-semibold text-zinc-700">
@@ -46,26 +47,47 @@ export default function ProjectView({ projectId }: Props) {
     );
   }
 
+  const theme = getTheme(project.theme);
+
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur">
+    <div className="min-h-screen" style={{ background: theme.pageBg }}>
+      <header
+        className="sticky top-0 z-10 border-b backdrop-blur"
+        style={{
+          background: theme.headerBg,
+          borderColor: theme.headerBorderColor,
+        }}
+      >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <Link
-            href="/"
-            className="text-sm font-semibold text-zinc-900 hover:text-zinc-600"
+            href="/dashboard"
+            className="text-sm font-semibold hover:opacity-70"
+            style={{ color: theme.titleColor }}
           >
-            ← DashLink
+            ← Dashboards
           </Link>
-          <span className="text-xs text-zinc-400 font-mono">
-            {project.apiUrl}
+          <span
+            className="truncate font-mono text-xs"
+            style={{ color: theme.mutedColor }}
+            title={project.apiUrl}
+          >
+            {project.apiUrl?.replace(/^https?:\/\//, "") ?? ""}
           </span>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="mb-6 text-2xl font-bold tracking-tight text-zinc-900">
+        <h1
+          className="mb-6 text-2xl font-bold tracking-tight"
+          style={{ color: theme.titleColor }}
+        >
           {project.name}
         </h1>
-        <DashboardRenderer config={project.config} data={project.data} />
+        <WidgetGrid
+          widgets={project.widgets}
+          layout={project.layout}
+          data={project.data}
+          themeId={project.theme}
+        />
       </main>
     </div>
   );

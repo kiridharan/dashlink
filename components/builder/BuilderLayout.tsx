@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/store/auth-store";
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
 import GridCanvas from "./GridCanvas";
 import FieldPanel from "./FieldPanel";
+import ThemeSelector from "./ThemeSelector";
 
 interface Props {
   projectId: string;
@@ -25,6 +26,8 @@ export default function BuilderLayout({ projectId }: Props) {
     resizeWidget,
     addWidget,
     removeWidget,
+    updateWidget,
+    updateTheme,
   } = useProjectStore();
 
   const project = projects.find((p) => p.id === projectId);
@@ -74,6 +77,10 @@ export default function BuilderLayout({ projectId }: Props) {
 
   const handleRemoveWidget = (widgetId: string) => {
     removeWidget(projectId, widgetId);
+  };
+
+  const handleUpdateWidget = (widgetId: string, patch: Partial<DashWidget>) => {
+    updateWidget(projectId, widgetId, patch);
   };
 
   return (
@@ -139,6 +146,10 @@ export default function BuilderLayout({ projectId }: Props) {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            <ThemeSelector
+              currentThemeId={project.theme ?? "zinc"}
+              onSelect={(themeId) => updateTheme(projectId, themeId)}
+            />
             {project.widgets.length > 0 && (
               <Link
                 href={`/view/${projectId}`}
@@ -233,9 +244,11 @@ export default function BuilderLayout({ projectId }: Props) {
             widgets={project.widgets}
             layout={project.layout}
             data={project.data}
+            themeId={project.theme}
             onReorder={handleReorder}
             onRemoveWidget={handleRemoveWidget}
             onResizeWidget={handleResizeWidget}
+            onUpdateWidget={handleUpdateWidget}
           />
         </div>
       </div>

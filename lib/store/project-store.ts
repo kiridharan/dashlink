@@ -8,6 +8,7 @@ import type {
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
 import { configToWidgets } from "@/lib/dashlink/builder-types";
 import { DEMO_SALES_DATA } from "@/lib/dashlink/dummy-data";
+import { DEFAULT_THEME_ID } from "@/lib/dashlink/themes";
 
 export interface Project {
   id: string;
@@ -26,6 +27,8 @@ export interface Project {
   layout: GridItem[];
   /** Data for rendering charts */
   data: Dataset;
+  /** Theme ID for the dashboard */
+  theme: string;
 }
 
 interface ProjectState {
@@ -61,6 +64,14 @@ interface ProjectState {
   resizeWidget: (id: string, widgetId: string, height: number) => void;
   addWidget: (id: string, widget: DashWidget, gridItem: GridItem) => void;
   removeWidget: (projectId: string, widgetId: string) => void;
+  /** Update a widget's field config in-place */
+  updateWidget: (
+    projectId: string,
+    widgetId: string,
+    patch: Partial<DashWidget>,
+  ) => void;
+  /** Change the dashboard theme */
+  updateTheme: (id: string, themeId: string) => void;
 }
 
 function uid(): string {
@@ -87,6 +98,7 @@ export const useProjectStore = create<ProjectState>()(
               widgets: [],
               layout: [],
               data: [],
+              theme: DEFAULT_THEME_ID,
             },
             ...s.projects,
           ],
@@ -109,6 +121,7 @@ export const useProjectStore = create<ProjectState>()(
               widgets,
               layout,
               data,
+              theme: DEFAULT_THEME_ID,
             },
             ...s.projects,
           ],
@@ -219,6 +232,29 @@ export const useProjectStore = create<ProjectState>()(
                   layout: p.layout.filter((l) => l.i !== widgetId),
                 }
               : p,
+          ),
+        }));
+      },
+
+      updateWidget(projectId, widgetId, patch) {
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  widgets: p.widgets.map((w) =>
+                    w.id === widgetId ? ({ ...w, ...patch } as DashWidget) : w,
+                  ),
+                }
+              : p,
+          ),
+        }));
+      },
+
+      updateTheme(id, themeId) {
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === id ? { ...p, theme: themeId } : p,
           ),
         }));
       },
