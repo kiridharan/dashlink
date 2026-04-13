@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import * as XLSX from "xlsx";
 import type { AuthConfig, AuthType, Dataset } from "@/lib/dashlink/types";
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
 import { formatLabel } from "@/lib/dashlink/utils";
@@ -36,6 +37,115 @@ function findArrayPaths(
     }
   }
   return results;
+}
+
+function toDataset(input: unknown): Dataset {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 500).flatMap((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+    const entries = Object.entries(row as Record<string, unknown>).map(
+      ([k, v]) => {
+        if (
+          typeof v === "string" ||
+          typeof v === "number" ||
+          typeof v === "boolean" ||
+          v === null
+        ) {
+          return [k, v] as const;
+        }
+        return [k, v == null ? null : String(v)] as const;
+      },
+    );
+    return [Object.fromEntries(entries)];
+  });
+}
+
+function detectGoogleSheetCsvUrl(url: string): string {
+  if (!url.includes("docs.google.com/spreadsheets")) return url;
+  const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (!idMatch?.[1]) return url;
+  const parsed = new URL(url);
+  const gid = parsed.searchParams.get("gid");
+  return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/export?format=csv${gid ? `&gid=${gid}` : ""}`;
+}
+
+function parseCsvLine(line: string): string[] {
+  const cols: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      cols.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  cols.push(current.trim());
+  return cols;
+}
+
+function parseCsv(text: string): Dataset {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return [];
+  const headers = parseCsvLine(lines[0]);
+  if (!headers.length) return [];
+  return lines.slice(1, 501).map((line) => {
+    const cols = parseCsvLine(line);
+    const row: Record<string, string | number | boolean | null> = {};
+    headers.forEach((header, idx) => {
+      const value = cols[idx] ?? "";
+      if (value === "") {
+        row[header] = null;
+      } else if (!isNaN(Number(value))) {
+        row[header] = Number(value);
+      } else if (
+        value.toLowerCase() === "true" ||
+        value.toLowerCase() === "false"
+      ) {
+        row[header] = value.toLowerCase() === "true";
+      } else {
+        row[header] = value;
+      }
+    });
+    return row;
+  });
+}
+
+function parseTextData(text: string): Dataset {
+  try {
+    const json = JSON.parse(text);
+    return toDataset(json);
+  } catch {
+    return parseCsv(text);
+  }
+}
+
+function parseExcelData(buffer: ArrayBuffer): Dataset {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) return [];
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+    workbook.Sheets[firstSheetName],
+    {
+      raw: true,
+      defval: null,
+    },
+  );
+  return toDataset(rows);
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +222,7 @@ function uid() {
 interface Props {
   onClose: () => void;
   onCreated: (id: string) => void;
+  mode?: "modal" | "page";
   createProjectFull: (
     name: string,
     apiUrl: string,
@@ -132,12 +243,18 @@ type Step = 1 | 2 | 3;
 export default function CreateProjectWizard({
   onClose,
   onCreated,
+  mode = "modal",
   createProjectFull,
 }: Props) {
   const [step, setStep] = useState<Step>(1);
 
   // -- Step 1 state --
   const [name, setName] = useState("Untitled Dashboard");
+  const [sourceType, setSourceType] = useState<"api" | "excel" | "gsheet">(
+    "api",
+  );
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [apiUrl, setApiUrl] = useState("");
   const [authType, setAuthType] = useState<AuthType>("none");
   const [token, setToken] = useState("");
@@ -163,11 +280,19 @@ export default function CreateProjectWizard({
 
   // ---- Step 1: test connection ----
 
-  const handleTest = async () => {
-    setTestError(null);
-    setTesting(true);
+  const resetDataResult = () => {
     setRawResponse(null);
     setResolvedData([]);
+    setDataPath("");
+    setFields([]);
+    setEntries([]);
+    setTestError(null);
+  };
+
+  const handleTestApi = async () => {
+    setTestError(null);
+    setTesting(true);
+    resetDataResult();
 
     const auth: AuthConfig = {
       type: authType,
@@ -195,18 +320,77 @@ export default function CreateProjectWizard({
 
       // If root is already an array, resolve immediately
       if (Array.isArray(json.data)) {
-        const dataset = (json.data as unknown[])
-          .slice(0, 500)
-          .filter(
-            (r): r is Record<string, unknown> =>
-              typeof r === "object" && r !== null,
-          ) as Dataset;
+        const dataset = toDataset(json.data);
         setDataPath("");
         setResolvedData(dataset);
         setFields(detectFields(dataset));
       }
     } catch (err) {
       setTestError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSyncSnapshot = async () => {
+    setTestError(null);
+    setTesting(true);
+    resetDataResult();
+
+    try {
+      let dataset: Dataset = [];
+      let sourceLabel = "";
+
+      if (sourceFile) {
+        const lowerName = sourceFile.name.toLowerCase();
+        if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+          const buffer = await sourceFile.arrayBuffer();
+          dataset = parseExcelData(buffer);
+        } else {
+          const text = await sourceFile.text();
+          dataset = parseTextData(text);
+        }
+        sourceLabel = sourceFile.name;
+      } else if (sourceUrl.trim()) {
+        const preparedUrl =
+          sourceType === "gsheet"
+            ? detectGoogleSheetCsvUrl(sourceUrl.trim())
+            : sourceUrl.trim();
+        const res = await fetch(preparedUrl);
+        if (!res.ok) {
+          throw new Error(`Could not fetch source (${res.status})`);
+        }
+        const contentType =
+          res.headers.get("content-type")?.toLowerCase() ?? "";
+        const isExcelByUrl = /\.(xlsx|xls)(\?|$)/i.test(preparedUrl);
+        if (
+          contentType.includes(
+            "application/vnd.openxmlformats-officedocument",
+          ) ||
+          contentType.includes("application/vnd.ms-excel") ||
+          isExcelByUrl
+        ) {
+          const buffer = await res.arrayBuffer();
+          dataset = parseExcelData(buffer);
+        } else {
+          const text = await res.text();
+          dataset = parseTextData(text);
+        }
+        sourceLabel = preparedUrl;
+      } else {
+        throw new Error("Provide a link or choose a file to sync");
+      }
+
+      if (!dataset.length) {
+        throw new Error("No tabular records found in this source");
+      }
+
+      setApiUrl(sourceLabel);
+      setRawResponse(dataset);
+      setResolvedData(dataset.slice(0, 500));
+      setFields(detectFields(dataset.slice(0, 500)));
+    } catch (err) {
+      setTestError(err instanceof Error ? err.message : "Sync failed");
     } finally {
       setTesting(false);
     }
@@ -288,13 +472,16 @@ export default function CreateProjectWizard({
   // ---- Finish: build DashWidget[] and create ----
 
   const handleCreate = () => {
-    const auth: AuthConfig = {
-      type: authType,
-      token: token || undefined,
-      headerName: headerName || undefined,
-      username: username || undefined,
-      password: password || undefined,
-    };
+    const auth: AuthConfig =
+      sourceType === "api"
+        ? {
+            type: authType,
+            token: token || undefined,
+            headerName: headerName || undefined,
+            username: username || undefined,
+            password: password || undefined,
+          }
+        : { type: "none" };
 
     const widgets: DashWidget[] = [];
     const layout: GridItem[] = [];
@@ -362,7 +549,7 @@ export default function CreateProjectWizard({
       ? findArrayPaths(rawResponse)
       : [];
   const testOk = rawResponse !== null;
-  const step1Ready = !!apiUrl.trim() && testOk;
+  const step1Ready = sourceType === "api" ? !!apiUrl.trim() && testOk : testOk;
   const step2Ready = resolvedData.length > 0;
 
   const WIDGET_ICON: Record<string, string> = {
@@ -378,13 +565,21 @@ export default function CreateProjectWizard({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
+      className={
+        mode === "modal"
+          ? "fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          : "mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-8"
+      }
+      onClick={mode === "modal" ? onClose : undefined}
     >
       <div
-        className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-        style={{ maxHeight: "90vh" }}
-        onClick={(e) => e.stopPropagation()}
+        className={
+          mode === "modal"
+            ? "relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            : "relative flex w-full flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
+        }
+        style={{ maxHeight: mode === "modal" ? "90vh" : "none" }}
+        onClick={mode === "modal" ? (e) => e.stopPropagation() : undefined}
       >
         {/* ---- Header ---- */}
         <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
@@ -393,7 +588,7 @@ export default function CreateProjectWizard({
               New Dashboard
             </h2>
             <p className="mt-0.5 text-xs text-zinc-400">
-              {step === 1 && "Connect your API"}
+              {step === 1 && "Pick source and connect"}
               {step === 2 && "Select data source"}
               {step === 3 && "Map fields to widgets"}
             </p>
@@ -441,6 +636,36 @@ export default function CreateProjectWizard({
           {/* ========== STEP 1: Connect ========== */}
           {step === 1 && (
             <div className="space-y-5">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                  Source type
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "api", label: "API" },
+                    { id: "excel", label: "Excel" },
+                    { id: "gsheet", label: "Google Sheet" },
+                  ].map((source) => (
+                    <button
+                      key={source.id}
+                      onClick={() => {
+                        setSourceType(source.id as "api" | "excel" | "gsheet");
+                        resetDataResult();
+                        setSourceUrl("");
+                        setSourceFile(null);
+                      }}
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                        sourceType === source.id
+                          ? "border-zinc-900 bg-zinc-900 text-white"
+                          : "border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                      }`}
+                    >
+                      {source.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Dashboard name */}
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-zinc-700">
@@ -454,186 +679,281 @@ export default function CreateProjectWizard({
                 />
               </div>
 
-              {/* API URL + test */}
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-700">
-                  API endpoint
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-1 items-center overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition focus-within:border-zinc-500 focus-within:bg-white">
-                    <span className="select-none px-3 text-xs text-zinc-400">
-                      GET
-                    </span>
+              {sourceType === "api" ? (
+                <>
+                  {/* API URL + test */}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                      API endpoint
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-1 items-center overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition focus-within:border-zinc-500 focus-within:bg-white">
+                        <span className="select-none px-3 text-xs text-zinc-400">
+                          GET
+                        </span>
+                        <input
+                          type="url"
+                          value={apiUrl}
+                          onChange={(e) => {
+                            setApiUrl(e.target.value);
+                            setRawResponse(null);
+                            setTestError(null);
+                          }}
+                          onKeyDown={(e) =>
+                            e.key === "Enter" &&
+                            !testing &&
+                            apiUrl.trim() &&
+                            handleTestApi()
+                          }
+                          placeholder="https://api.example.com/v1/sales"
+                          className="flex-1 bg-transparent py-2 pr-3 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+                        />
+                      </div>
+                      <button
+                        onClick={handleTestApi}
+                        disabled={testing || !apiUrl.trim()}
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50"
+                      >
+                        {testing && (
+                          <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        )}
+                        {testing ? "Testing…" : "Test →"}
+                      </button>
+                    </div>
+
+                    {testError && (
+                      <p className="mt-2 flex items-center gap-1.5 text-xs text-red-500">
+                        <svg
+                          width="12"
+                          height="12"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                          />
+                        </svg>
+                        {testError}
+                      </p>
+                    )}
+                    {testOk && !testError && (
+                      <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600">
+                        <svg
+                          width="12"
+                          height="12"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2.5}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        Connection successful
+                        {Array.isArray(rawResponse) &&
+                          ` · ${rawResponse.length} records`}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Auth type selector */}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                      Authentication
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(
+                        ["none", "bearer", "apikey", "basic"] as AuthType[]
+                      ).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setAuthType(t)}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                            authType === t
+                              ? "border-zinc-900 bg-zinc-900 text-white"
+                              : "border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                          }`}
+                        >
+                          {t === "none"
+                            ? "None"
+                            : t === "bearer"
+                              ? "Bearer"
+                              : t === "apikey"
+                                ? "API Key"
+                                : "Basic"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Auth fields */}
+                  {authType === "bearer" && (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                        Bearer token
+                      </label>
+                      <input
+                        type="password"
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        placeholder="eyJ…"
+                        className="w-full rounded-lg border border-zinc-200 px-3 py-2 font-mono text-sm outline-none focus:border-zinc-500"
+                      />
+                    </div>
+                  )}
+
+                  {authType === "apikey" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                          Header name
+                        </label>
+                        <input
+                          value={headerName}
+                          onChange={(e) => setHeaderName(e.target.value)}
+                          placeholder="X-API-Key"
+                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 font-mono text-sm outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                          Key value
+                        </label>
+                        <input
+                          type="password"
+                          value={token}
+                          onChange={(e) => setToken(e.target.value)}
+                          placeholder="sk-…"
+                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 font-mono text-sm outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {authType === "basic" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                          Username
+                        </label>
+                        <input
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                          Password
+                        </label>
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                    Excel and Google Sheet imports are synced once when you
+                    click sync. They do not auto-refresh.
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                      Link (optional)
+                    </label>
                     <input
                       type="url"
-                      value={apiUrl}
+                      value={sourceUrl}
                       onChange={(e) => {
-                        setApiUrl(e.target.value);
-                        setRawResponse(null);
+                        setSourceUrl(e.target.value);
                         setTestError(null);
+                        setRawResponse(null);
                       }}
-                      onKeyDown={(e) =>
-                        e.key === "Enter" &&
-                        !testing &&
-                        apiUrl.trim() &&
-                        handleTest()
+                      placeholder={
+                        sourceType === "excel"
+                          ? "https://example.com/sales.xlsx"
+                          : "https://docs.google.com/spreadsheets/d/..."
                       }
-                      placeholder="https://api.example.com/v1/sales"
-                      className="flex-1 bg-transparent py-2 pr-3 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+                      File (optional)
+                    </label>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.json"
+                      onChange={(e) => {
+                        setSourceFile(e.target.files?.[0] ?? null);
+                        setTestError(null);
+                        setRawResponse(null);
+                      }}
+                      className="block w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-2.5 file:py-1.5 file:text-xs file:font-medium file:text-zinc-700 hover:file:bg-zinc-200"
                     />
                   </div>
                   <button
-                    onClick={handleTest}
-                    disabled={testing || !apiUrl.trim()}
-                    className="flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50"
+                    onClick={handleSyncSnapshot}
+                    disabled={testing || (!sourceUrl.trim() && !sourceFile)}
+                    className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50"
                   >
                     {testing && (
                       <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                     )}
-                    {testing ? "Testing…" : "Test →"}
+                    {testing ? "Syncing…" : "Sync once →"}
                   </button>
-                </div>
 
-                {testError && (
-                  <p className="mt-2 flex items-center gap-1.5 text-xs text-red-500">
-                    <svg
-                      width="12"
-                      height="12"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-                      />
-                    </svg>
-                    {testError}
-                  </p>
-                )}
-                {testOk && !testError && (
-                  <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600">
-                    <svg
-                      width="12"
-                      height="12"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                    Connection successful
-                    {Array.isArray(rawResponse) &&
-                      ` · ${rawResponse.length} records`}
-                  </p>
-                )}
-              </div>
-
-              {/* Auth type selector */}
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-700">
-                  Authentication
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(["none", "bearer", "apikey", "basic"] as AuthType[]).map(
-                    (t) => (
-                      <button
-                        key={t}
-                        onClick={() => setAuthType(t)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                          authType === t
-                            ? "border-zinc-900 bg-zinc-900 text-white"
-                            : "border-zinc-200 text-zinc-600 hover:border-zinc-400"
-                        }`}
+                  {testError && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-red-500">
+                      <svg
+                        width="12"
+                        height="12"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
                       >
-                        {t === "none"
-                          ? "None"
-                          : t === "bearer"
-                            ? "Bearer"
-                            : t === "apikey"
-                              ? "API Key"
-                              : "Basic"}
-                      </button>
-                    ),
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                        />
+                      </svg>
+                      {testError}
+                    </p>
                   )}
-                </div>
-              </div>
-
-              {/* Auth fields */}
-              {authType === "bearer" && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-zinc-700">
-                    Bearer token
-                  </label>
-                  <input
-                    type="password"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="eyJ…"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 font-mono text-sm outline-none focus:border-zinc-500"
-                  />
-                </div>
-              )}
-
-              {authType === "apikey" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
-                      Header name
-                    </label>
-                    <input
-                      value={headerName}
-                      onChange={(e) => setHeaderName(e.target.value)}
-                      placeholder="X-API-Key"
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 font-mono text-sm outline-none focus:border-zinc-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
-                      Key value
-                    </label>
-                    <input
-                      type="password"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      placeholder="sk-…"
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 font-mono text-sm outline-none focus:border-zinc-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {authType === "basic" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
-                      Username
-                    </label>
-                    <input
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-zinc-700">
-                      Password
-                    </label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-500"
-                    />
-                  </div>
-                </div>
+                  {testOk && !testError && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-600">
+                      <svg
+                        width="12"
+                        height="12"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                      Snapshot synced · {resolvedData.length} records
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

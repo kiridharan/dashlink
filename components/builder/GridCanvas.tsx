@@ -425,7 +425,7 @@ export default function GridCanvas({
   if (widgets.length === 0) {
     return (
       <div
-        className="flex h-full min-h-[400px] items-center justify-center rounded-2xl border-2 border-dashed"
+        className="flex h-full min-h-100 items-center justify-center rounded-2xl border-2 border-dashed"
         style={{ borderColor: theme.cardBorderColor, background: theme.cardBg }}
       >
         <div className="text-center">

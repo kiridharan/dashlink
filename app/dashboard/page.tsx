@@ -1,18 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/store/auth-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import ProjectCard from "@/components/projects/ProjectCard";
-import CreateProjectWizard from "@/components/builder/CreateProjectWizard";
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
-  const { projects, createProjectFull, deleteProject } = useProjectStore();
-  const [wizardOpen, setWizardOpen] = useState(false);
+  const { projects, deleteProject } = useProjectStore();
 
   // Guard: redirect to login if not authenticated
   useEffect(() => {
@@ -20,11 +18,6 @@ export default function DashboardPage() {
   }, [user, router]);
 
   if (!user) return null;
-
-  const handleCreated = (id: string) => {
-    setWizardOpen(false);
-    router.push(`/projects/${id}`);
-  };
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -60,8 +53,8 @@ export default function DashboardPage() {
               {projects.length} project{projects.length !== 1 ? "s" : ""}
             </p>
           </div>
-          <button
-            onClick={() => setWizardOpen(true)}
+          <Link
+            href="/projects/new"
             className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700"
           >
             <svg
@@ -79,7 +72,7 @@ export default function DashboardPage() {
               />
             </svg>
             New dashboard
-          </button>
+          </Link>
         </div>
 
         {/* Project grid */}
@@ -119,23 +112,15 @@ export default function DashboardPage() {
             <p className="mt-1 text-sm text-zinc-400">
               Paste an API URL and generate your first live dashboard.
             </p>
-            <button
-              onClick={() => setWizardOpen(true)}
+            <Link
+              href="/projects/new"
               className="mt-6 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700"
             >
               Create your first dashboard
-            </button>
+            </Link>
           </div>
         )}
       </main>
-
-      {wizardOpen && (
-        <CreateProjectWizard
-          onClose={() => setWizardOpen(false)}
-          onCreated={handleCreated}
-          createProjectFull={createProjectFull}
-        />
-      )}
     </div>
   );
 }
