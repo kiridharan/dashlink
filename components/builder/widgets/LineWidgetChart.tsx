@@ -15,6 +15,11 @@ import type { LineWidget } from "@/lib/dashlink/builder-types";
 import type { Dataset } from "@/lib/dashlink/types";
 import { useWidgetTheme } from "@/lib/dashlink/theme-context";
 import { formatNumber } from "@/lib/dashlink/utils";
+import {
+  aggregateLineSeries,
+  aggregationSubtitle,
+  buildLineSeries,
+} from "@/lib/dashlink/aggregation";
 
 interface Props {
   widget: LineWidget;
@@ -25,13 +30,19 @@ export default function LineWidgetChart({ widget, data }: Props) {
   const theme = useWidgetTheme();
   const cs = theme.chart;
 
-  const chartData = data.map((row) => ({
-    [widget.x]: row[widget.x],
-    [widget.y]:
-      typeof row[widget.y] === "number"
-        ? (row[widget.y] as number)
-        : parseFloat(String(row[widget.y] ?? "0")),
-  }));
+  const shouldAggregate = widget.metric !== undefined || !!widget.timeGrain;
+  const chartData = shouldAggregate
+    ? aggregateLineSeries(data, widget.x, widget.y, {
+        metric: widget.metric,
+        timeGrain: widget.timeGrain,
+      })
+    : buildLineSeries(data, widget.x, widget.y);
+  const subtitle = aggregationSubtitle({
+    metric: widget.metric,
+    valueField: widget.y,
+    groupField: widget.x,
+    timeGrain: widget.timeGrain,
+  });
 
   const tooltipStyle = {
     borderRadius: cs.tooltipRadius,
@@ -56,6 +67,12 @@ export default function LineWidgetChart({ widget, data }: Props) {
         style={{ color: theme.mutedColor, fontSize: cs.axisLabelSize }}
       >
         {widget.label}
+      </p>
+      <p
+        className="-mt-1 mb-2 text-[10px]"
+        style={{ color: theme.mutedColor, fontSize: cs.axisLabelSize }}
+      >
+        {subtitle}
       </p>
       <div className="flex-1">
         <ResponsiveContainer width="100%" height="100%">

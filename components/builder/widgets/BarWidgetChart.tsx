@@ -13,7 +13,11 @@ import {
 import type { BarWidget } from "@/lib/dashlink/builder-types";
 import type { Dataset } from "@/lib/dashlink/types";
 import { useWidgetTheme } from "@/lib/dashlink/theme-context";
-import { aggregateByField, formatNumber } from "@/lib/dashlink/utils";
+import { formatNumber } from "@/lib/dashlink/utils";
+import {
+  aggregateByGroup,
+  aggregationSubtitle,
+} from "@/lib/dashlink/aggregation";
 
 interface Props {
   widget: BarWidget;
@@ -23,7 +27,16 @@ interface Props {
 export default function BarWidgetChart({ widget, data }: Props) {
   const theme = useWidgetTheme();
   const cs = theme.chart;
-  const chartData = aggregateByField(data, widget.x, widget.y);
+  const chartData = aggregateByGroup(data, widget.x, widget.y, {
+    metric: widget.metric,
+    sort: widget.sort,
+    topN: widget.topN,
+  });
+  const subtitle = aggregationSubtitle({
+    metric: widget.metric,
+    valueField: widget.y,
+    groupField: widget.x,
+  });
 
   return (
     <div
@@ -35,6 +48,12 @@ export default function BarWidgetChart({ widget, data }: Props) {
         style={{ color: theme.mutedColor, fontSize: cs.axisLabelSize }}
       >
         {widget.label}
+      </p>
+      <p
+        className="-mt-1 mb-2 text-[10px]"
+        style={{ color: theme.mutedColor, fontSize: cs.axisLabelSize }}
+      >
+        {subtitle}
       </p>
       <div className="flex-1">
         <ResponsiveContainer width="100%" height="100%">

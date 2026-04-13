@@ -494,6 +494,7 @@ export default function CreateProjectWizard({
             type: "kpi",
             field: e.fields[0],
             label: `Total ${formatLabel(e.fields[0])}`,
+            metric: "sum",
           });
           layout.push({ i: e.id, span: 3, height: 120 });
           break;
@@ -504,6 +505,7 @@ export default function CreateProjectWizard({
             x: e.fields[0],
             y: e.fields[1]!,
             label: e.label,
+            metric: "sum",
           });
           layout.push({ i: e.id, span: 6, height: 280 });
           break;
@@ -514,6 +516,7 @@ export default function CreateProjectWizard({
             x: e.fields[0],
             y: e.fields[1]!,
             label: e.label,
+            metric: "sum",
           });
           layout.push({ i: e.id, span: 6, height: 280 });
           break;
@@ -524,6 +527,7 @@ export default function CreateProjectWizard({
             category: e.fields[0],
             value: e.fields[1]!,
             label: e.label,
+            metric: "sum",
           });
           layout.push({ i: e.id, span: 6, height: 280 });
           break;

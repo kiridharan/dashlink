@@ -21,7 +21,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Resizable } from "re-resizable";
 
-import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
+import type {
+  AggregationMetric,
+  DashWidget,
+  GridItem,
+  SortDirection,
+  TimeGrain,
+} from "@/lib/dashlink/builder-types";
 import type { Dataset } from "@/lib/dashlink/types";
 import { ThemeProvider } from "@/lib/dashlink/theme-context";
 import { getTheme } from "@/lib/dashlink/themes";
@@ -32,22 +38,131 @@ import TableWidgetView from "./widgets/TableWidgetView";
 import PieWidgetChart from "./widgets/PieWidgetChart";
 
 // ---- Derive field lists from data ----
+type FieldKind = "numeric" | "date" | "text";
+
+function inferFieldKind(samples: unknown[]): FieldKind {
+  const clean = samples.filter(
+    (v) => v !== null && v !== undefined && v !== "",
+  );
+  if (!clean.length) return "text";
+  if (
+    clean.every(
+      (v) =>
+        typeof v === "number" ||
+        (typeof v === "string" && v.trim() !== "" && !isNaN(Number(v))),
+    )
+  ) {
+    return "numeric";
+  }
+  if (
+    clean.every((v) => typeof v === "string" && /^\d{4}[-/]/.test(v as string))
+  ) {
+    return "date";
+  }
+  return "text";
+}
+
 function getFields(data: Dataset) {
   const all = data.length > 0 ? Object.keys(data[0]) : [];
-  const numeric = all.filter(
-    (f) =>
-      typeof data[0][f] === "number" ||
-      (typeof data[0][f] === "string" &&
-        (data[0][f] as string).trim() !== "" &&
-        !isNaN(Number(data[0][f]))),
-  );
+  const kindByField = Object.fromEntries(
+    all.map((field) => [
+      field,
+      inferFieldKind(data.slice(0, 20).map((row) => row[field])),
+    ]),
+  ) as Record<string, FieldKind>;
+  const numeric = all.filter((f) => kindByField[f] === "numeric");
+  const date = all.filter((f) => kindByField[f] === "date");
   const nonNumeric = all.filter((f) => !numeric.includes(f));
-  return { all, numeric, nonNumeric };
+  return { all, numeric, date, nonNumeric, kindByField };
 }
 
 // ---- Shared <select> style ----
 const SEL =
   "rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] text-zinc-700 outline-none focus:border-zinc-400 hover:border-zinc-300 cursor-pointer max-w-[120px] truncate";
+const NUM_INPUT =
+  "w-16 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] text-zinc-700 outline-none focus:border-zinc-400 hover:border-zinc-300";
+
+const METRIC_OPTIONS: Array<{
+  value: AggregationMetric;
+  label: string;
+  help: string;
+}> = [
+  {
+    value: "sum",
+    label: "Sum",
+    help: "Adds all numeric values in the selected field.",
+  },
+  {
+    value: "avg",
+    label: "Average",
+    help: "Shows the average of numeric values.",
+  },
+  { value: "min", label: "Min", help: "Shows the smallest numeric value." },
+  { value: "max", label: "Max", help: "Shows the largest numeric value." },
+  {
+    value: "count",
+    label: "Count",
+    help: "Counts rows in each group or overall.",
+  },
+  {
+    value: "countDistinct",
+    label: "Distinct Count",
+    help: "Counts unique values in the selected field.",
+  },
+];
+
+const SORT_OPTIONS: Array<{ value: SortDirection; label: string }> = [
+  { value: "desc", label: "High to low" },
+  { value: "asc", label: "Low to high" },
+];
+
+const TIME_GRAIN_OPTIONS: Array<{ value: TimeGrain; label: string }> = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "quarter", label: "Quarter" },
+  { value: "year", label: "Year" },
+];
+
+function ConfigRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+      {children}
+    </div>
+  );
+}
+
+function ConfigLabel({ text, title }: { text: string; title: string }) {
+  return (
+    <span className="shrink-0 text-[10px] text-zinc-400" title={title}>
+      {text}
+    </span>
+  );
+}
+
+function ConfigHint({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-3 pb-2 text-[10px] leading-relaxed text-zinc-400">
+      {children}
+    </p>
+  );
+}
+
+function metricFieldOptions(
+  all: string[],
+  numeric: string[],
+  metric?: AggregationMetric,
+) {
+  return metric === "count" || metric === "countDistinct"
+    ? all
+    : numeric.length > 0
+      ? numeric
+      : all;
+}
+
+function uniqueValueCount(data: Dataset, field: string) {
+  return new Set(data.map((row) => String(row[field] ?? "(empty)"))).size;
+}
 
 // ---- Per-widget field config row ----
 function WidgetFieldConfig({
@@ -59,101 +174,294 @@ function WidgetFieldConfig({
   data: Dataset;
   onUpdate: (patch: Partial<DashWidget>) => void;
 }) {
-  const { all, numeric, nonNumeric } = getFields(data);
+  const { all, numeric, date, nonNumeric, kindByField } = getFields(data);
   if (!all.length) return null;
 
+  const renderMetricSelect = (
+    metric: AggregationMetric | undefined,
+    patchField: string = "metric",
+  ) => (
+    <select
+      className={SEL}
+      value={metric ?? "sum"}
+      onPointerDown={(e) => e.stopPropagation()}
+      onChange={(e) =>
+        onUpdate({
+          [patchField]: e.target.value as AggregationMetric,
+        } as Partial<DashWidget>)
+      }
+      title="Choose how values are aggregated"
+    >
+      {METRIC_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+
   if (widget.type === "kpi") {
+    const help = METRIC_OPTIONS.find(
+      (option) => option.value === (widget.metric ?? "sum"),
+    )?.help;
     return (
-      <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
-        <span className="shrink-0 text-[10px] text-zinc-400">Field</span>
-        <select
-          className={SEL}
-          value={widget.field}
-          onPointerDown={(e) => e.stopPropagation()}
-          onChange={(e) =>
-            onUpdate({ field: e.target.value } as Partial<DashWidget>)
-          }
-        >
-          {all.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
+      <div className="border-b border-zinc-100 bg-zinc-50">
+        <ConfigRow>
+          <ConfigLabel text="Field" title="Pick the field used for this KPI" />
+          <select
+            className={SEL}
+            value={widget.field}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              onUpdate({ field: e.target.value } as Partial<DashWidget>)
+            }
+            title="Pick the field used for this KPI"
+          >
+            {all.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <ConfigLabel text="Metric" title="Choose the KPI calculation" />
+          {renderMetricSelect(widget.metric)}
+        </ConfigRow>
+        <ConfigHint>{help}</ConfigHint>
       </div>
     );
   }
 
   if (widget.type === "line" || widget.type === "bar") {
+    const valueOptions = metricFieldOptions(all, numeric, widget.metric);
+    const xIsDate = kindByField[widget.x] === "date";
+    const distinctCount = uniqueValueCount(data, widget.x);
+    const metricHelp = METRIC_OPTIONS.find(
+      (option) => option.value === (widget.metric ?? "sum"),
+    )?.help;
     return (
-      <div className="flex items-center gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
-        <span className="shrink-0 text-[10px] text-zinc-400">X</span>
-        <select
-          className={SEL}
-          value={widget.x}
-          onPointerDown={(e) => e.stopPropagation()}
-          onChange={(e) =>
-            onUpdate({ x: e.target.value } as Partial<DashWidget>)
-          }
-        >
-          {all.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-        <span className="shrink-0 text-[10px] text-zinc-400">Y</span>
-        <select
-          className={SEL}
-          value={widget.y}
-          onPointerDown={(e) => e.stopPropagation()}
-          onChange={(e) =>
-            onUpdate({ y: e.target.value } as Partial<DashWidget>)
-          }
-        >
-          {(numeric.length > 0 ? numeric : all).map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
+      <div className="border-b border-zinc-100 bg-zinc-50">
+        <ConfigRow>
+          <ConfigLabel
+            text="Group"
+            title="Choose the axis or grouping field for this chart"
+          />
+          <select
+            className={SEL}
+            value={widget.x}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              const nextX = e.target.value;
+              const nextPatch: Partial<DashWidget> = { x: nextX };
+              if (kindByField[nextX] !== "date" && widget.type === "line") {
+                (nextPatch as Partial<typeof widget>).timeGrain = undefined;
+              }
+              onUpdate(nextPatch);
+            }}
+            title="Choose the axis or grouping field for this chart"
+          >
+            {all.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <ConfigLabel text="Value" title="Choose the field to measure" />
+          <select
+            className={SEL}
+            value={widget.y}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              onUpdate({ y: e.target.value } as Partial<DashWidget>)
+            }
+            title="Choose the field to measure"
+          >
+            {valueOptions.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </ConfigRow>
+        <ConfigRow>
+          <ConfigLabel text="Metric" title="Choose how values are aggregated" />
+          {renderMetricSelect(widget.metric)}
+          {widget.type === "line" && (
+            <>
+              <ConfigLabel
+                text="Time"
+                title="Bucket date values into a time grain when the group field is a date"
+              />
+              <select
+                className={SEL}
+                value={widget.timeGrain ?? ""}
+                disabled={!xIsDate}
+                onPointerDown={(e) => e.stopPropagation()}
+                onChange={(e) =>
+                  onUpdate({
+                    timeGrain: (e.target.value || undefined) as
+                      | TimeGrain
+                      | undefined,
+                  } as Partial<DashWidget>)
+                }
+                title="Bucket date values into a time grain"
+              >
+                <option value="">None</option>
+                {TIME_GRAIN_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+          {widget.type === "bar" && (
+            <>
+              <ConfigLabel
+                text="Sort"
+                title="Sort grouped results by aggregated value"
+              />
+              <select
+                className={SEL}
+                value={widget.sort ?? "desc"}
+                onPointerDown={(e) => e.stopPropagation()}
+                onChange={(e) =>
+                  onUpdate({
+                    sort: e.target.value as SortDirection,
+                  } as Partial<DashWidget>)
+                }
+                title="Sort grouped results by aggregated value"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ConfigLabel
+                text="Top"
+                title="Limit the number of displayed groups"
+              />
+              <input
+                type="number"
+                min={1}
+                max={50}
+                className={NUM_INPUT}
+                value={widget.topN ?? ""}
+                onPointerDown={(e) => e.stopPropagation()}
+                onChange={(e) =>
+                  onUpdate({
+                    topN: e.target.value ? Number(e.target.value) : undefined,
+                  } as Partial<DashWidget>)
+                }
+                title="Limit the number of displayed groups"
+              />
+            </>
+          )}
+        </ConfigRow>
+        <ConfigHint>
+          {metricHelp}
+          {widget.type === "line" &&
+            !xIsDate &&
+            " Time grain is available only when the group field looks like a date."}
+          {widget.metric === "countDistinct" &&
+            distinctCount > 50 &&
+            ` High-cardinality groups detected (${distinctCount} unique values), so the chart may get crowded.`}
+        </ConfigHint>
       </div>
     );
   }
 
   if (widget.type === "pie") {
+    const valueOptions = metricFieldOptions(all, numeric, widget.metric);
+    const distinctCount = uniqueValueCount(data, widget.category);
+    const metricHelp = METRIC_OPTIONS.find(
+      (option) => option.value === (widget.metric ?? "sum"),
+    )?.help;
     return (
-      <div className="flex items-center gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
-        <span className="shrink-0 text-[10px] text-zinc-400">Category</span>
-        <select
-          className={SEL}
-          value={widget.category}
-          onPointerDown={(e) => e.stopPropagation()}
-          onChange={(e) =>
-            onUpdate({ category: e.target.value } as Partial<DashWidget>)
-          }
-        >
-          {(nonNumeric.length > 0 ? nonNumeric : all).map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-        <span className="shrink-0 text-[10px] text-zinc-400">Value</span>
-        <select
-          className={SEL}
-          value={widget.value}
-          onPointerDown={(e) => e.stopPropagation()}
-          onChange={(e) =>
-            onUpdate({ value: e.target.value } as Partial<DashWidget>)
-          }
-        >
-          {(numeric.length > 0 ? numeric : all).map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
+      <div className="border-b border-zinc-100 bg-zinc-50">
+        <ConfigRow>
+          <ConfigLabel text="Group" title="Choose the category field" />
+          <select
+            className={SEL}
+            value={widget.category}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              onUpdate({ category: e.target.value } as Partial<DashWidget>)
+            }
+            title="Choose the category field"
+          >
+            {(nonNumeric.length > 0 ? nonNumeric : all).map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <ConfigLabel text="Value" title="Choose the field to measure" />
+          <select
+            className={SEL}
+            value={widget.value}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              onUpdate({ value: e.target.value } as Partial<DashWidget>)
+            }
+            title="Choose the field to measure"
+          >
+            {valueOptions.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </ConfigRow>
+        <ConfigRow>
+          <ConfigLabel text="Metric" title="Choose how values are aggregated" />
+          {renderMetricSelect(widget.metric)}
+          <ConfigLabel
+            text="Sort"
+            title="Sort grouped results by aggregated value"
+          />
+          <select
+            className={SEL}
+            value={widget.sort ?? "desc"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              onUpdate({
+                sort: e.target.value as SortDirection,
+              } as Partial<DashWidget>)
+            }
+            title="Sort grouped results by aggregated value"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <ConfigLabel
+            text="Top"
+            title="Limit the number of displayed slices"
+          />
+          <input
+            type="number"
+            min={1}
+            max={50}
+            className={NUM_INPUT}
+            value={widget.topN ?? ""}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              onUpdate({
+                topN: e.target.value ? Number(e.target.value) : undefined,
+              } as Partial<DashWidget>)
+            }
+            title="Limit the number of displayed slices"
+          />
+        </ConfigRow>
+        <ConfigHint>
+          {metricHelp}
+          {widget.metric === "countDistinct" &&
+            distinctCount > 50 &&
+            ` High-cardinality groups detected (${distinctCount} unique values), so consider adding Top N.`}
+        </ConfigHint>
       </div>
     );
   }

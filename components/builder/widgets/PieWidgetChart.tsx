@@ -12,6 +12,10 @@ import type { PieWidget } from "@/lib/dashlink/builder-types";
 import type { Dataset } from "@/lib/dashlink/types";
 import { useWidgetTheme } from "@/lib/dashlink/theme-context";
 import { formatLabel, formatNumber } from "@/lib/dashlink/utils";
+import {
+  aggregateByGroup,
+  aggregationSubtitle,
+} from "@/lib/dashlink/aggregation";
 
 interface Props {
   widget: PieWidget;
@@ -22,20 +26,20 @@ export default function PieWidgetChart({ widget, data }: Props) {
   const theme = useWidgetTheme();
   const cs = theme.chart;
 
-  const groups = new Map<string, number>();
-  for (const row of data) {
-    const key = String(row[widget.category] ?? "(unknown)");
-    const raw = row[widget.value];
-    const val = typeof raw === "number" ? raw : parseFloat(String(raw ?? "0"));
-    if (!isNaN(val)) {
-      groups.set(key, (groups.get(key) ?? 0) + val);
-    }
-  }
-
-  const chartData = Array.from(groups.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
+  const metricRows = aggregateByGroup(data, widget.category, widget.value, {
+    metric: widget.metric,
+    sort: widget.sort,
+    topN: widget.topN ?? 8,
+  });
+  const chartData = metricRows.map((row) => ({
+    name: String(row[widget.category] ?? "(unknown)"),
+    value: Number(row[widget.value] ?? 0),
+  }));
+  const subtitle = aggregationSubtitle({
+    metric: widget.metric,
+    valueField: widget.value,
+    groupField: widget.category,
+  });
 
   return (
     <div
@@ -47,6 +51,12 @@ export default function PieWidgetChart({ widget, data }: Props) {
         style={{ color: theme.mutedColor, fontSize: cs.axisLabelSize }}
       >
         {widget.label}
+      </p>
+      <p
+        className="-mt-1 mb-2 text-[10px]"
+        style={{ color: theme.mutedColor, fontSize: cs.axisLabelSize }}
+      >
+        {subtitle}
       </p>
       <div className="flex-1">
         <ResponsiveContainer width="100%" height="100%">

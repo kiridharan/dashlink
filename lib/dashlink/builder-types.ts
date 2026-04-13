@@ -2,6 +2,26 @@
 
 export type WidgetType = "kpi" | "line" | "bar" | "pie" | "table";
 
+// ---- Aggregation model (Phase 1 foundation) ----
+export type AggregationMetric =
+  | "sum"
+  | "avg"
+  | "min"
+  | "max"
+  | "count"
+  | "countDistinct";
+
+export type TimeGrain = "day" | "week" | "month" | "quarter" | "year";
+export type SortDirection = "asc" | "desc";
+
+export interface AggregateOptions {
+  metric?: AggregationMetric;
+  groupBy?: string;
+  timeGrain?: TimeGrain;
+  sort?: SortDirection;
+  topN?: number;
+}
+
 // ---- Size descriptor ----
 // `span`  : how many of 12 virtual columns the widget occupies
 // `height`: pixel height — user-resizable
@@ -17,6 +37,8 @@ export interface KpiWidget {
   type: "kpi";
   field: string;
   label: string;
+  /** Defaults to "sum" for backward compatibility */
+  metric?: AggregationMetric;
 }
 
 export interface LineWidget {
@@ -25,6 +47,9 @@ export interface LineWidget {
   x: string;
   y: string;
   label: string;
+  /** Defaults to "sum" for backward compatibility */
+  metric?: AggregationMetric;
+  timeGrain?: TimeGrain;
 }
 
 export interface BarWidget {
@@ -33,6 +58,10 @@ export interface BarWidget {
   x: string;
   y: string;
   label: string;
+  /** Defaults to "sum" for backward compatibility */
+  metric?: AggregationMetric;
+  sort?: SortDirection;
+  topN?: number;
 }
 
 export interface PieWidget {
@@ -41,6 +70,10 @@ export interface PieWidget {
   category: string;
   value: string;
   label: string;
+  /** Defaults to "sum" for backward compatibility */
+  metric?: AggregationMetric;
+  sort?: SortDirection;
+  topN?: number;
 }
 
 export interface TableWidget {
@@ -69,7 +102,13 @@ export function configToWidgets(config: DashboardConfig): {
   // KPI cards — 3/12 span each (4 per row), 120px tall
   config.kpis.slice(0, 4).forEach((field) => {
     const id = `kpi-${field}`;
-    widgets.push({ id, type: "kpi", field, label: `Total ${field}` });
+    widgets.push({
+      id,
+      type: "kpi",
+      field,
+      label: `Total ${field}`,
+      metric: "sum",
+    });
     layout.push({ i: id, span: 3, height: 120 });
   });
 
@@ -83,6 +122,7 @@ export function configToWidgets(config: DashboardConfig): {
         x: chart.x,
         y: chart.y,
         label: chart.label,
+        metric: "sum",
       });
     } else if (chart.type === "pie") {
       widgets.push({
@@ -91,6 +131,7 @@ export function configToWidgets(config: DashboardConfig): {
         category: chart.x,
         value: chart.y,
         label: chart.label,
+        metric: "sum",
       });
     } else {
       widgets.push({
@@ -99,6 +140,7 @@ export function configToWidgets(config: DashboardConfig): {
         x: chart.x,
         y: chart.y,
         label: chart.label,
+        metric: "sum",
       });
     }
     layout.push({ i: id, span: 6, height: 280 });

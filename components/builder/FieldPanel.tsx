@@ -99,6 +99,7 @@ export default function FieldPanel({
   const numericFields = fields.filter((f) => f.kind === "numeric");
   const dateFields = fields.filter((f) => f.kind === "date");
   const catFields = fields.filter((f) => f.kind === "categorical");
+  const defaultMetric = numericFields.length > 0 ? "sum" : "count";
 
   // ---- Quick-add helpers ----
 
@@ -110,6 +111,7 @@ export default function FieldPanel({
         type: "kpi",
         field: fieldName,
         label: `Total ${formatLabel(fieldName)}`,
+        metric: "sum",
       },
       { i: id, span: 3, height: 120 },
     );
@@ -126,6 +128,7 @@ export default function FieldPanel({
         x: xField,
         y: yField,
         label: `${formatLabel(yField)} over ${formatLabel(xField)}`,
+        metric: defaultMetric,
       },
       { i: id, span: 6, height: 280 },
     );
@@ -135,22 +138,27 @@ export default function FieldPanel({
     const xField = catFields[0]?.name ?? dateFields[0]?.name;
     if (!xField) return;
     const id = `bar-${yField}-${uid()}`;
+    const metric = numericFields.length > 0 ? "sum" : "count";
     onAdd(
       {
         id,
         type: "bar",
         x: xField,
         y: yField,
-        label: `${formatLabel(yField)} by ${formatLabel(xField)}`,
+        label:
+          metric === "count"
+            ? `Count by ${formatLabel(xField)}`
+            : `${formatLabel(yField)} by ${formatLabel(xField)}`,
+        metric,
       },
       { i: id, span: 6, height: 280 },
     );
   };
 
   const addPie = (categoryField: string) => {
-    const valueField = numericFields[0]?.name;
-    if (!valueField) return;
+    const valueField = numericFields[0]?.name ?? categoryField;
     const id = `pie-${categoryField}-${uid()}`;
+    const metric = numericFields.length > 0 ? "sum" : "count";
     onAdd(
       {
         id,
@@ -158,6 +166,7 @@ export default function FieldPanel({
         category: categoryField,
         value: valueField,
         label: `${formatLabel(categoryField)} breakdown`,
+        metric,
       },
       { i: id, span: 6, height: 280 },
     );
@@ -171,14 +180,19 @@ export default function FieldPanel({
     }
     const xField =
       dateFields[0]?.name ?? catFields[0]?.name ?? fields[0]?.name ?? "x";
-    const yField = numericFields[0]?.name ?? fields[1]?.name ?? "y";
+    const yField = numericFields[0]?.name ?? fields[1]?.name ?? xField;
+    const metric = numericFields.length > 0 ? "sum" : "count";
     if (type === "kpi") {
       onAdd(
         {
           id,
           type: "kpi",
-          field: yField,
-          label: `Total ${formatLabel(yField)}`,
+          field: numericFields[0]?.name ?? xField,
+          label:
+            metric === "count"
+              ? `Count of ${formatLabel(xField)}`
+              : `Total ${formatLabel(yField)}`,
+          metric,
         },
         { i: id, span: 3, height: 120 },
       );
@@ -189,7 +203,11 @@ export default function FieldPanel({
           type: "line",
           x: xField,
           y: yField,
-          label: `${formatLabel(yField)} over ${formatLabel(xField)}`,
+          label:
+            metric === "count"
+              ? `Count over ${formatLabel(xField)}`
+              : `${formatLabel(yField)} over ${formatLabel(xField)}`,
+          metric,
         },
         { i: id, span: 6, height: 280 },
       );
@@ -200,7 +218,11 @@ export default function FieldPanel({
           type: "bar",
           x: xField,
           y: yField,
-          label: `${formatLabel(yField)} by ${formatLabel(xField)}`,
+          label:
+            metric === "count"
+              ? `Count by ${formatLabel(xField)}`
+              : `${formatLabel(yField)} by ${formatLabel(xField)}`,
+          metric,
         },
         { i: id, span: 6, height: 280 },
       );
@@ -211,8 +233,9 @@ export default function FieldPanel({
           id,
           type: "pie",
           category: cat,
-          value: yField,
+          value: metric === "count" ? cat : yField,
           label: `${formatLabel(cat)} breakdown`,
+          metric,
         },
         { i: id, span: 6, height: 280 },
       );
@@ -308,15 +331,15 @@ export default function FieldPanel({
                       <>
                         <button
                           onClick={() => addPie(name)}
-                          disabled={!numericFields.length}
                           className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 hover:border-zinc-400 disabled:opacity-40"
                         >
                           Pie
                         </button>
                         <button
                           onClick={() => {
-                            const vf = numericFields[0]?.name;
-                            if (!vf) return;
+                            const vf = numericFields[0]?.name ?? name;
+                            const metric =
+                              numericFields.length > 0 ? "sum" : "count";
                             const id = `bar-${name}-${uid()}`;
                             onAdd(
                               {
@@ -324,12 +347,15 @@ export default function FieldPanel({
                                 type: "bar",
                                 x: name,
                                 y: vf,
-                                label: `${formatLabel(vf)} by ${formatLabel(name)}`,
+                                label:
+                                  metric === "count"
+                                    ? `Count by ${formatLabel(name)}`
+                                    : `${formatLabel(vf)} by ${formatLabel(name)}`,
+                                metric,
                               },
                               { i: id, span: 6, height: 280 },
                             );
                           }}
-                          disabled={!numericFields.length}
                           className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 hover:border-zinc-400 disabled:opacity-40"
                         >
                           Bar
