@@ -5,7 +5,11 @@ import type {
   DashboardConfig,
   AuthConfig,
 } from "@/lib/dashlink/types";
-import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
+import type {
+  DashboardFilter,
+  DashWidget,
+  GridItem,
+} from "@/lib/dashlink/builder-types";
 import { configToWidgets } from "@/lib/dashlink/builder-types";
 import { DEMO_SALES_DATA } from "@/lib/dashlink/dummy-data";
 import { DEFAULT_THEME_ID } from "@/lib/dashlink/themes";
@@ -29,6 +33,8 @@ export interface Project {
   data: Dataset;
   /** Theme ID for the dashboard */
   theme: string;
+  /** Active builder filters persisted with the draft dashboard */
+  filters: DashboardFilter[];
 }
 
 interface ProjectState {
@@ -72,6 +78,9 @@ interface ProjectState {
   ) => void;
   /** Change the dashboard theme */
   updateTheme: (id: string, themeId: string) => void;
+  addFilter: (projectId: string, filter: DashboardFilter) => void;
+  removeFilter: (projectId: string, filterId: string) => void;
+  clearFilters: (projectId: string) => void;
 }
 
 function uid(): string {
@@ -99,6 +108,7 @@ export const useProjectStore = create<ProjectState>()(
               layout: [],
               data: [],
               theme: DEFAULT_THEME_ID,
+              filters: [],
             },
             ...s.projects,
           ],
@@ -122,6 +132,7 @@ export const useProjectStore = create<ProjectState>()(
               layout,
               data,
               theme: DEFAULT_THEME_ID,
+              filters: [],
             },
             ...s.projects,
           ],
@@ -173,6 +184,7 @@ export const useProjectStore = create<ProjectState>()(
                   layout,
                   // Use provided data or fall back to demo
                   data: data.length > 0 ? data : DEMO_SALES_DATA,
+                  filters: p.filters ?? [],
                 }
               : p,
           ),
@@ -255,6 +267,56 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({
           projects: s.projects.map((p) =>
             p.id === id ? { ...p, theme: themeId } : p,
+          ),
+        }));
+      },
+
+      addFilter(projectId, filter) {
+        set((s) => ({
+          projects: s.projects.map((p) => {
+            if (p.id !== projectId) return p;
+
+            const currentFilters = p.filters ?? [];
+            const exists = currentFilters.some((existing) => {
+              if (existing.type !== filter.type) return false;
+              if (existing.type === "search" && filter.type === "search") {
+                return existing.query === filter.query;
+              }
+              return (
+                existing.type === "value" &&
+                filter.type === "value" &&
+                existing.field === filter.field &&
+                existing.value === filter.value
+              );
+            });
+
+            return {
+              ...p,
+              filters: exists ? currentFilters : [...currentFilters, filter],
+            };
+          }),
+        }));
+      },
+
+      removeFilter(projectId, filterId) {
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  filters: (p.filters ?? []).filter(
+                    (filter) => filter.id !== filterId,
+                  ),
+                }
+              : p,
+          ),
+        }));
+      },
+
+      clearFilters(projectId) {
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId ? { ...p, filters: [] } : p,
           ),
         }));
       },

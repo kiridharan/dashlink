@@ -14,6 +14,23 @@ export type AggregationMetric =
 export type TimeGrain = "day" | "week" | "month" | "quarter" | "year";
 export type SortDirection = "asc" | "desc";
 
+export type DashboardFilterType = "value" | "search";
+
+export interface DashboardValueFilter {
+  id: string;
+  type: "value";
+  field: string;
+  value: string;
+}
+
+export interface DashboardSearchFilter {
+  id: string;
+  type: "search";
+  query: string;
+}
+
+export type DashboardFilter = DashboardValueFilter | DashboardSearchFilter;
+
 export interface AggregateOptions {
   metric?: AggregationMetric;
   groupBy?: string;

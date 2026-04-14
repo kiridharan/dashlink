@@ -17,7 +17,18 @@ interface Props {
 
 export default function TableWidgetView({ widget, data }: Props) {
   const theme = useWidgetTheme();
-  if (!data.length) return null;
+
+  if (!data.length) {
+    return (
+      <div
+        className="flex h-full items-center justify-center px-4 text-center text-xs"
+        style={{ background: theme.cardBg, color: theme.mutedColor }}
+      >
+        No rows match the current filters.
+      </div>
+    );
+  }
+
   const cols = widget.columns ?? Object.keys(data[0]);
   const rows = data.slice(0, 50);
 

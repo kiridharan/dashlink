@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useProjectStore, type Project } from "@/lib/store/project-store";
+import { useProjectStore } from "@/lib/store/project-store";
 import { useAuthStore } from "@/lib/store/auth-store";
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
+import {
+  applyDashboardFilters,
+  formatDashboardFilterLabel,
+  getDatasetFields,
+  getFieldValueOptions,
+} from "@/lib/dashlink/filters";
 import GridCanvas from "./GridCanvas";
 import FieldPanel from "./FieldPanel";
 import ThemeSelector from "./ThemeSelector";
@@ -14,41 +20,92 @@ interface Props {
   projectId: string;
 }
 
+function createFilterId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
 export default function BuilderLayout({ projectId }: Props) {
   const router = useRouter();
   const { user } = useAuthStore();
   const {
     projects,
-    updateApiUrl,
     updateName,
-    applyConfig,
     reorderWidgets,
     resizeWidget,
     addWidget,
     removeWidget,
     updateWidget,
     updateTheme,
+    addFilter,
+    removeFilter,
+    clearFilters,
   } = useProjectStore();
 
   const project = projects.find((p) => p.id === projectId);
+  const sourceData = project?.data ?? [];
+  const activeFilters = project?.filters ?? [];
 
   const [title, setTitle] = useState(project?.name ?? "");
   const [shareCopied, setShareCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [selectedFilterField, setSelectedFilterField] = useState("");
+  const [selectedFilterValue, setSelectedFilterValue] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Redirect if not authed
+  const filterFields = useMemo(
+    () => getDatasetFields(sourceData),
+    [sourceData],
+  );
+  const valueOptions = useMemo(
+    () =>
+      selectedFilterField
+        ? getFieldValueOptions(sourceData, selectedFilterField)
+        : [],
+    [sourceData, selectedFilterField],
+  );
+  const filteredData = useMemo(
+    () => applyDashboardFilters(sourceData, activeFilters),
+    [sourceData, activeFilters],
+  );
+
   useEffect(() => {
     if (!user) router.replace("/login");
   }, [user, router]);
 
-  // Redirect if project not found (deleted)
   useEffect(() => {
     if (user && !project) router.replace("/dashboard");
   }, [user, project, router]);
 
+  useEffect(() => {
+    setTitle(project?.name ?? "");
+  }, [project?.name]);
+
+  useEffect(() => {
+    if (filterFields.length === 0) {
+      setSelectedFilterField("");
+      setSelectedFilterValue("");
+      return;
+    }
+
+    if (!selectedFilterField || !filterFields.includes(selectedFilterField)) {
+      setSelectedFilterField(filterFields[0]);
+    }
+  }, [filterFields, selectedFilterField]);
+
+  useEffect(() => {
+    if (valueOptions.length === 0) {
+      setSelectedFilterValue("");
+      return;
+    }
+
+    if (!valueOptions.includes(selectedFilterValue)) {
+      setSelectedFilterValue(valueOptions[0]);
+    }
+  }, [selectedFilterValue, valueOptions]);
+
   if (!user || !project) return null;
 
-  // ---- Handlers ----
+  const hasFilters = activeFilters.length > 0;
 
   const handleTitleSave = () => {
     updateName(projectId, title.trim() || "Untitled Dashboard");
@@ -83,9 +140,31 @@ export default function BuilderLayout({ projectId }: Props) {
     updateWidget(projectId, widgetId, patch);
   };
 
+  const handleAddValueFilter = () => {
+    if (!selectedFilterField || !selectedFilterValue) return;
+
+    addFilter(projectId, {
+      id: createFilterId(),
+      type: "value",
+      field: selectedFilterField,
+      value: selectedFilterValue,
+    });
+  };
+
+  const handleAddSearchFilter = () => {
+    const query = searchQuery.trim();
+    if (!query) return;
+
+    addFilter(projectId, {
+      id: createFilterId(),
+      type: "search",
+      query,
+    });
+    setSearchQuery("");
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50">
-      {/* ---- Top nav ---- */}
       <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur">
         <div className="flex items-center gap-3 px-5 py-3">
           <Link
@@ -111,7 +190,6 @@ export default function BuilderLayout({ projectId }: Props) {
 
           <span className="text-zinc-200">/</span>
 
-          {/* Editable title */}
           {editingTitle ? (
             <input
               autoFocus
@@ -205,7 +283,6 @@ export default function BuilderLayout({ projectId }: Props) {
           </div>
         </div>
 
-        {/* ---- URL generate bar ---- */}
         <div className="border-t border-zinc-100 px-5 py-2.5">
           <p
             className="truncate font-mono text-xs text-zinc-400"
@@ -227,9 +304,108 @@ export default function BuilderLayout({ projectId }: Props) {
             </span>
           )}
         </div>
+
+        {sourceData.length > 0 && (
+          <div className="border-t border-zinc-100 px-5 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                Filters
+              </span>
+              <select
+                value={selectedFilterField}
+                onChange={(e) => setSelectedFilterField(e.target.value)}
+                className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+              >
+                {filterFields.map((field) => (
+                  <option key={field} value={field}>
+                    {field}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedFilterValue}
+                onChange={(e) => setSelectedFilterValue(e.target.value)}
+                disabled={valueOptions.length === 0}
+                className="min-w-32 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {valueOptions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleAddValueFilter}
+                disabled={!selectedFilterField || !selectedFilterValue}
+                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Add value filter
+              </button>
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAddSearchFilter();
+                }}
+                placeholder="Search all fields..."
+                className="min-w-44 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-zinc-400"
+              />
+              <button
+                onClick={handleAddSearchFilter}
+                disabled={!searchQuery.trim()}
+                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Add search
+              </button>
+              {hasFilters && (
+                <button
+                  onClick={() => clearFilters(projectId)}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700"
+                >
+                  Clear all
+                </button>
+              )}
+              <span className="ml-auto rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600">
+                {filteredData.length} / {sourceData.length} rows
+              </span>
+            </div>
+
+            {hasFilters && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {activeFilters.map((filter) => (
+                  <span
+                    key={filter.id}
+                    className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] text-zinc-600"
+                  >
+                    {formatDashboardFilterLabel(filter)}
+                    <button
+                      onClick={() => removeFilter(projectId, filter.id)}
+                      className="rounded-full text-zinc-400 transition hover:text-zinc-700"
+                      aria-label={`Remove ${formatDashboardFilterLabel(filter)}`}
+                    >
+                      <svg
+                        width="10"
+                        height="10"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
-      {/* ---- Builder body ---- */}
       <div className="flex flex-1 gap-5 p-5">
         <FieldPanel
           data={project.data}
@@ -243,7 +419,7 @@ export default function BuilderLayout({ projectId }: Props) {
           <GridCanvas
             widgets={project.widgets}
             layout={project.layout}
-            data={project.data}
+            data={filteredData}
             themeId={project.theme}
             onReorder={handleReorder}
             onRemoveWidget={handleRemoveWidget}
