@@ -1,34 +1,14 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useProjectStore } from "@/lib/store/project-store";
 import { getTheme } from "@/lib/dashlink/themes";
+import type { DashboardProject } from "@/lib/supabase/types";
 import WidgetGrid from "./WidgetGrid";
 
 interface Props {
-  projectId: string;
+  project: DashboardProject;
 }
 
-export default function ProjectView({ projectId }: Props) {
-  const [hydrated, setHydrated] = useState(false);
-  const { projects } = useProjectStore();
-
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
-
-  if (!hydrated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50">
-        <span className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-700" />
-      </div>
-    );
-  }
-
-  const project = projects.find((p) => p.id === projectId);
-
-  if (!project || project.widgets.length === 0) {
+export default function ProjectView({ project }: Props) {
+  if (project.widgets.length === 0) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 text-center">
         <p className="text-base font-semibold text-zinc-700">
@@ -60,11 +40,11 @@ export default function ProjectView({ projectId }: Props) {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <Link
-            href="/dashboard"
+            href="/"
             className="text-sm font-semibold hover:opacity-70"
             style={{ color: theme.titleColor }}
           >
-            ← Dashboards
+            ← DashLink
           </Link>
           <span
             className="truncate font-mono text-xs"

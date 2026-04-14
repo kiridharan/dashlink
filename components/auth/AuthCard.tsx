@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/lib/store/auth-store";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface Props {
   mode: "login" | "signup";
@@ -11,32 +11,60 @@ interface Props {
 
 export default function AuthCard({ mode }: Props) {
   const router = useRouter();
-  const { login, signup } = useAuthStore();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setMessage(null);
     setLoading(true);
 
-    const result =
-      mode === "signup"
-        ? signup(name, email, password)
-        : login(email, password);
+    try {
+      const supabase = createSupabaseBrowserClient();
 
-    setLoading(false);
+      if (mode === "signup") {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name.trim(),
+            },
+          },
+        });
 
-    if (!result.ok) {
-      setError(result.error ?? "Something went wrong.");
-      return;
+        if (signUpError) {
+          throw signUpError;
+        }
+
+        if (!data.session) {
+          setMessage("Account created. Check your email to confirm sign in.");
+          return;
+        }
+      } else {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) {
+          throw signInError;
+        }
+      }
+
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
     }
-
-    router.push("/dashboard");
   };
 
   return (
@@ -111,6 +139,12 @@ export default function AuthCard({ mode }: Props) {
           {error && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
               {error}
+            </p>
+          )}
+
+          {message && (
+            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              {message}
             </p>
           )}
 

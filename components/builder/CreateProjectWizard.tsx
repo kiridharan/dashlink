@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import type { AuthConfig, AuthType, Dataset } from "@/lib/dashlink/types";
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
@@ -220,18 +221,9 @@ function uid() {
 // ---------------------------------------------------------------------------
 
 interface Props {
-  onClose: () => void;
-  onCreated: (id: string) => void;
+  onClose?: () => void;
+  onCreated?: (id: string) => void;
   mode?: "modal" | "page";
-  createProjectFull: (
-    name: string,
-    apiUrl: string,
-    auth: AuthConfig,
-    dataPath: string,
-    widgets: DashWidget[],
-    layout: GridItem[],
-    data: Dataset,
-  ) => string;
 }
 
 type Step = 1 | 2 | 3;
@@ -244,8 +236,8 @@ export default function CreateProjectWizard({
   onClose,
   onCreated,
   mode = "modal",
-  createProjectFull,
 }: Props) {
+  const router = useRouter();
   const [step, setStep] = useState<Step>(1);
 
   // -- Step 1 state --
@@ -272,6 +264,8 @@ export default function CreateProjectWizard({
   // -- Step 3 state --
   const [fields, setFields] = useState<FieldInfo[]>([]);
   const [entries, setEntries] = useState<WEntry[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // ---- Derived field lists ----
   const numericFields = fields.filter((f) => f.kind === "numeric");
@@ -471,7 +465,9 @@ export default function CreateProjectWizard({
 
   // ---- Finish: build DashWidget[] and create ----
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    setCreateError(null);
+
     const auth: AuthConfig =
       sourceType === "api"
         ? {
@@ -534,16 +530,47 @@ export default function CreateProjectWizard({
       }
     }
 
-    const id = createProjectFull(
-      name.trim() || "Untitled Dashboard",
-      apiUrl.trim(),
-      auth,
-      dataPath,
-      widgets,
-      layout,
-      resolvedData,
-    );
-    onCreated(id);
+    setCreating(true);
+
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: name.trim() || "Untitled Dashboard",
+          apiUrl: apiUrl.trim(),
+          authConfig: auth,
+          dataPath,
+          widgets,
+          layout,
+          data: resolvedData,
+          filters: [],
+          isPublic: true,
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Could not create dashboard.");
+      }
+
+      const createdId = json.project?.id as string | undefined;
+
+      if (!createdId) {
+        throw new Error("Dashboard created without an id.");
+      }
+
+      onCreated?.(createdId);
+      router.push(`/projects/${createdId}`);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error ? err.message : "Could not create dashboard.",
+      );
+    } finally {
+      setCreating(false);
+    }
   };
 
   // ---- Helpers ----
@@ -1195,7 +1222,7 @@ export default function CreateProjectWizard({
             </button>
           ) : (
             <button
-              onClick={onClose}
+              onClick={onClose ?? (() => router.push("/dashboard"))}
               className="text-sm text-zinc-500 hover:text-zinc-700"
             >
               Cancel
@@ -1223,13 +1250,20 @@ export default function CreateProjectWizard({
           {step === 3 && (
             <button
               onClick={handleCreate}
-              disabled={entries.length === 0}
+              disabled={entries.length === 0 || creating}
               className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-40"
             >
-              Create Dashboard →
+              {creating ? "Creating..." : "Create Dashboard →"}
             </button>
           )}
         </div>
+        {createError && (
+          <div className="border-t border-zinc-100 px-6 py-3">
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              {createError}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
