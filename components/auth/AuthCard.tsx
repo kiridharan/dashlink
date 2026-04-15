@@ -9,6 +9,18 @@ interface Props {
   mode: "login" | "signup";
 }
 
+function getAuthErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Something went wrong.";
+  }
+
+  if (error.message === "Invalid API key") {
+    return "Supabase rejected the configured public API key. Check NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local and restart the dev server.";
+  }
+
+  return error.message;
+}
+
 export default function AuthCard({ mode }: Props) {
   const router = useRouter();
 
@@ -61,7 +73,7 @@ export default function AuthCard({ mode }: Props) {
       router.replace("/dashboard");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(getAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }

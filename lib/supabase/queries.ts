@@ -200,6 +200,24 @@ export async function createProject(
   client: SupabaseClient,
   input: DashboardProjectInput,
 ) {
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+
+  // Ensure a profiles row exists (trigger may not have fired)
+  await client.from("profiles").upsert(
+    {
+      id: user.id,
+      email: user.email!,
+      full_name: user.user_metadata?.full_name ?? user.email!.split("@")[0],
+    },
+    { onConflict: "id" },
+  );
+
   const payload = toProjectPayload(input);
   let insertError: Error | null = null;
 
@@ -208,6 +226,7 @@ export async function createProject(
       .from("projects")
       .insert({
         ...payload,
+        owner_id: user.id,
         public_slug: createPublicSlug(),
       })
       .select(

@@ -1,6 +1,6 @@
 import AuthCard from "@/components/auth/AuthCard";
-import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 export const metadata = {
   title: "Sign up — DashLink",

@@ -8,6 +8,13 @@ function readEnv(name: "NEXT_PUBLIC_SUPABASE_URL") {
   return value;
 }
 
+function readSupabaseUrl() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (url) return url;
+
+  throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_URL");
+}
+
 function readSupabasePublicKey() {
   const publishable = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (publishable) return publishable;
@@ -23,7 +30,7 @@ function readSupabasePublicKey() {
 
 export function getSupabaseConfig() {
   return {
-    url: readEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    url: readSupabaseUrl(),
     anonKey: readSupabasePublicKey(),
   };
 }
