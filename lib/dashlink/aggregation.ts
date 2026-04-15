@@ -21,6 +21,10 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
+function isNullish(value: unknown): boolean {
+  return value === null || value === undefined || value === "";
+}
+
 export function resolveMetric(metric?: AggregationMetric): AggregationMetric {
   return metric ?? "sum";
 }
@@ -53,18 +57,36 @@ export function aggregationSubtitle(options: {
   return `${metricText} of ${valueText}`;
 }
 
-export function bucketByTimeGrain(value: unknown, grain?: TimeGrain): string {
+export function bucketByTimeGrain(
+  value: unknown,
+  grain?: TimeGrain,
+  fiscalStartMonth?: number,
+): string {
   if (!grain) return String(value ?? "(empty)");
   const date = new Date(String(value ?? ""));
   if (Number.isNaN(date.getTime())) return String(value ?? "(empty)");
 
   const year = date.getUTCFullYear();
-  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const monthNum = date.getUTCMonth() + 1; // 1-12
+  const month = `${monthNum}`.padStart(2, "0");
   const day = `${date.getUTCDate()}`.padStart(2, "0");
 
-  if (grain === "year") return `${year}`;
-  if (grain === "quarter")
-    return `${year}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+  // Fiscal year offset (e.g. fiscalStartMonth=4 means April start)
+  const fyStart = fiscalStartMonth ?? 1;
+  const fiscalYear = monthNum >= fyStart ? year : year - 1;
+
+  if (grain === "year") {
+    if (fyStart === 1) return `${year}`;
+    return `FY${fiscalYear}`;
+  }
+  if (grain === "quarter") {
+    if (fyStart === 1)
+      return `${year}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+    // Fiscal quarter: offset months by fiscal start
+    const adjustedMonth = (monthNum - fyStart + 12) % 12;
+    const fq = Math.floor(adjustedMonth / 3) + 1;
+    return `FY${fiscalYear}-Q${fq}`;
+  }
   if (grain === "month") return `${year}-${month}`;
   if (grain === "day") return `${year}-${month}-${day}`;
 
@@ -76,6 +98,10 @@ export function bucketByTimeGrain(value: unknown, grain?: TimeGrain): string {
   const wMonth = `${weekStart.getUTCMonth() + 1}`.padStart(2, "0");
   const wDay = `${weekStart.getUTCDate()}`.padStart(2, "0");
   return `${wYear}-${wMonth}-${wDay}`;
+}
+
+export function filterNulls(data: Dataset, field: string): Dataset {
+  return data.filter((row) => !isNullish(row[field]));
 }
 
 export function computeMetric(
@@ -104,6 +130,36 @@ export function computeMetric(
   return nums.reduce((a, b) => a + b, 0);
 }
 
+// ---- Previous period comparison for KPIs ----
+
+export interface PeriodComparison {
+  current: number;
+  previous: number;
+  delta: number;
+  deltaPercent: number | null; // null if previous was 0
+}
+
+export function computeKpiWithComparison(
+  data: Dataset,
+  field: string,
+  metric?: AggregationMetric,
+): PeriodComparison {
+  // Split dataset in half: first half = previous, second half = current
+  const midpoint = Math.floor(data.length / 2);
+  const previousData = data.slice(0, midpoint);
+  const currentData = data.slice(midpoint);
+
+  const current = computeMetric(currentData, field, metric);
+  const previous = computeMetric(previousData, field, metric);
+  const delta = current - previous;
+  const deltaPercent =
+    previous !== 0 ? (delta / Math.abs(previous)) * 100 : null;
+
+  return { current, previous, delta, deltaPercent };
+}
+
+// ---- "Other" bucket aggregation ----
+
 export function aggregateByGroup(
   data: Dataset,
   groupField: string,
@@ -113,14 +169,29 @@ export function aggregateByGroup(
     sort?: SortDirection;
     topN?: number;
     timeGrain?: TimeGrain;
+    showOtherBucket?: boolean;
+    hideNulls?: boolean;
+    fiscalStartMonth?: number;
   },
 ): Dataset {
   const metric = resolveMetric(options?.metric);
+
+  let filteredData = data;
+  if (options?.hideNulls) {
+    filteredData = filteredData.filter(
+      (row) => !isNullish(row[groupField]) && !isNullish(row[valueField]),
+    );
+  }
+
   const grouped = new Map<DataValue, Dataset>();
 
-  for (const row of data) {
+  for (const row of filteredData) {
     const key = options?.timeGrain
-      ? bucketByTimeGrain(row[groupField], options.timeGrain)
+      ? bucketByTimeGrain(
+          row[groupField],
+          options.timeGrain,
+          options.fiscalStartMonth,
+        )
       : (row[groupField] ?? "(empty)");
     const current = grouped.get(key) ?? [];
     current.push(row);
@@ -141,7 +212,65 @@ export function aggregateByGroup(
 
   const topN = options?.topN;
   if (!topN || topN <= 0) return rows;
+
+  if (options?.showOtherBucket && rows.length > topN) {
+    const topRows = rows.slice(0, topN);
+    const otherRows = rows.slice(topN);
+    const otherValue = otherRows.reduce(
+      (acc, row) => acc + (toNumber(row[valueField]) ?? 0),
+      0,
+    );
+    topRows.push({
+      [groupField]: "Other",
+      [valueField]: otherValue,
+    });
+    return topRows;
+  }
+
   return rows.slice(0, topN);
+}
+
+// ---- Multi-group aggregation ----
+
+export function aggregateByMultipleGroups(
+  data: Dataset,
+  groupField: string,
+  secondGroupField: string,
+  valueField: string,
+  options?: {
+    metric?: AggregationMetric;
+    hideNulls?: boolean;
+  },
+): Dataset {
+  const metric = resolveMetric(options?.metric);
+
+  let filteredData = data;
+  if (options?.hideNulls) {
+    filteredData = filteredData.filter(
+      (row) =>
+        !isNullish(row[groupField]) &&
+        !isNullish(row[secondGroupField]) &&
+        !isNullish(row[valueField]),
+    );
+  }
+
+  const grouped = new Map<string, Dataset>();
+
+  for (const row of filteredData) {
+    const key = `${row[groupField] ?? "(empty)"}|||${row[secondGroupField] ?? "(empty)"}`;
+    const current = grouped.get(key) ?? [];
+    current.push(row);
+    grouped.set(key, current);
+  }
+
+  return Array.from(grouped.entries()).map(([key, rowsForKey]) => {
+    const [g1, g2] = key.split("|||");
+    return {
+      [groupField]: g1,
+      [secondGroupField]: g2,
+      [valueField]: computeMetric(rowsForKey, valueField, metric),
+    };
+  });
 }
 
 export function buildLineSeries(
@@ -162,14 +291,28 @@ export function aggregateLineSeries(
   options?: {
     metric?: AggregationMetric;
     timeGrain?: TimeGrain;
+    hideNulls?: boolean;
+    fiscalStartMonth?: number;
   },
 ): Dataset {
   const metric = resolveMetric(options?.metric);
+
+  let filteredData = data;
+  if (options?.hideNulls) {
+    filteredData = filteredData.filter(
+      (row) => !isNullish(row[xField]) && !isNullish(row[yField]),
+    );
+  }
+
   const grouped = new Map<string, Dataset>();
 
-  for (const row of data) {
+  for (const row of filteredData) {
     const key = options?.timeGrain
-      ? bucketByTimeGrain(row[xField], options.timeGrain)
+      ? bucketByTimeGrain(
+          row[xField],
+          options.timeGrain,
+          options.fiscalStartMonth,
+        )
       : String(row[xField] ?? "(empty)");
     const current = grouped.get(key) ?? [];
     current.push(row);

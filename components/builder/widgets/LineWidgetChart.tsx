@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -9,6 +10,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from "recharts";
 import type { LineWidget } from "@/lib/dashlink/builder-types";
@@ -17,6 +19,7 @@ import { useWidgetTheme } from "@/lib/dashlink/theme-context";
 import { formatNumber } from "@/lib/dashlink/utils";
 import {
   aggregateLineSeries,
+  aggregateByMultipleGroups,
   aggregationSubtitle,
   buildLineSeries,
 } from "@/lib/dashlink/aggregation";
@@ -30,13 +33,52 @@ export default function LineWidgetChart({ widget, data }: Props) {
   const theme = useWidgetTheme();
   const cs = theme.chart;
 
-  const shouldAggregate = widget.metric !== undefined || !!widget.timeGrain;
-  const chartData = shouldAggregate
-    ? aggregateLineSeries(data, widget.x, widget.y, {
-        metric: widget.metric,
-        timeGrain: widget.timeGrain,
-      })
-    : buildLineSeries(data, widget.x, widget.y);
+  const hasSecondGroup = !!widget.secondGroupBy;
+
+  // Single group path
+  const singleGroupData = useMemo(() => {
+    if (hasSecondGroup) return [];
+    const shouldAggregate = widget.metric !== undefined || !!widget.timeGrain;
+    return shouldAggregate
+      ? aggregateLineSeries(data, widget.x, widget.y, {
+          metric: widget.metric,
+          timeGrain: widget.timeGrain,
+          hideNulls: widget.hideNulls,
+          fiscalStartMonth: widget.customDateRange?.startMonth,
+        })
+      : buildLineSeries(data, widget.x, widget.y);
+  }, [data, widget, hasSecondGroup]);
+
+  // Multi group path: pivot to { x, series1, series2, ... }
+  const { pivotedData, seriesKeys } = useMemo(() => {
+    if (!hasSecondGroup)
+      return { pivotedData: [] as Dataset, seriesKeys: [] as string[] };
+
+    const raw = aggregateByMultipleGroups(
+      data,
+      widget.x,
+      widget.secondGroupBy!,
+      widget.y,
+      { metric: widget.metric, hideNulls: widget.hideNulls },
+    );
+
+    const sKeys = Array.from(
+      new Set(raw.map((r) => String(r[widget.secondGroupBy!] ?? "(empty)"))),
+    );
+
+    const byX = new Map<string, Record<string, unknown>>();
+    for (const row of raw) {
+      const xk = String(row[widget.x] ?? "(empty)");
+      const sk = String(row[widget.secondGroupBy!] ?? "(empty)");
+      if (!byX.has(xk)) byX.set(xk, { [widget.x]: xk });
+      byX.get(xk)![sk] = row[widget.y];
+    }
+
+    return { pivotedData: Array.from(byX.values()), seriesKeys: sKeys };
+  }, [data, widget, hasSecondGroup]);
+
+  const chartData = hasSecondGroup ? pivotedData : singleGroupData;
+
   const subtitle = aggregationSubtitle({
     metric: widget.metric,
     valueField: widget.y,
@@ -76,7 +118,7 @@ export default function LineWidgetChart({ widget, data }: Props) {
       </p>
       <div className="flex-1">
         <ResponsiveContainer width="100%" height="100%">
-          {cs.lineArea ? (
+          {cs.lineArea && !hasSecondGroup ? (
             <AreaChart
               data={chartData}
               margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
@@ -144,23 +186,49 @@ export default function LineWidgetChart({ widget, data }: Props) {
               />
               <Tooltip
                 contentStyle={tooltipStyle}
-                formatter={(v) => [formatNumber(Number(v)), widget.y]}
+                formatter={(v) => [formatNumber(Number(v)), ""]}
               />
-              <Line
-                type={cs.lineType}
-                dataKey={widget.y}
-                stroke={theme.chartColors[0]}
-                strokeWidth={cs.lineStrokeWidth}
-                dot={
-                  cs.lineDot
-                    ? { r: cs.lineDotRadius, fill: theme.chartColors[0] }
-                    : false
-                }
-                activeDot={{
-                  r: cs.lineDotRadius + 1,
-                  fill: theme.chartColors[0],
-                }}
-              />
+              {hasSecondGroup ? (
+                <>
+                  <Legend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                  {seriesKeys.map((sk, i) => (
+                    <Line
+                      key={sk}
+                      type={cs.lineType}
+                      dataKey={sk}
+                      name={sk}
+                      stroke={theme.chartColors[i % theme.chartColors.length]}
+                      strokeWidth={cs.lineStrokeWidth}
+                      dot={
+                        cs.lineDot
+                          ? {
+                              r: cs.lineDotRadius,
+                              fill: theme.chartColors[
+                                i % theme.chartColors.length
+                              ],
+                            }
+                          : false
+                      }
+                    />
+                  ))}
+                </>
+              ) : (
+                <Line
+                  type={cs.lineType}
+                  dataKey={widget.y}
+                  stroke={theme.chartColors[0]}
+                  strokeWidth={cs.lineStrokeWidth}
+                  dot={
+                    cs.lineDot
+                      ? { r: cs.lineDotRadius, fill: theme.chartColors[0] }
+                      : false
+                  }
+                  activeDot={{
+                    r: cs.lineDotRadius + 1,
+                    fill: theme.chartColors[0],
+                  }}
+                />
+              )}
             </LineChart>
           )}
         </ResponsiveContainer>

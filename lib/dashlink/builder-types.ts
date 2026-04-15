@@ -14,7 +14,7 @@ export type AggregationMetric =
 export type TimeGrain = "day" | "week" | "month" | "quarter" | "year";
 export type SortDirection = "asc" | "desc";
 
-export type DashboardFilterType = "value" | "search";
+export type DashboardFilterType = "value" | "search" | "dateRange";
 
 export interface DashboardValueFilter {
   id: string;
@@ -29,7 +29,22 @@ export interface DashboardSearchFilter {
   query: string;
 }
 
-export type DashboardFilter = DashboardValueFilter | DashboardSearchFilter;
+export interface DashboardDateRangeFilter {
+  id: string;
+  type: "dateRange";
+  field: string;
+  from: string; // ISO date string
+  to: string; // ISO date string
+}
+
+export type DashboardFilter =
+  | DashboardValueFilter
+  | DashboardSearchFilter
+  | DashboardDateRangeFilter;
+
+export interface CustomDateRange {
+  startMonth: number; // 1-12, e.g. 4 for fiscal year starting in April
+}
 
 export interface AggregateOptions {
   metric?: AggregationMetric;
@@ -37,6 +52,9 @@ export interface AggregateOptions {
   timeGrain?: TimeGrain;
   sort?: SortDirection;
   topN?: number;
+  showOtherBucket?: boolean;
+  hideNulls?: boolean;
+  customDateRange?: CustomDateRange;
 }
 
 // ---- Size descriptor ----
@@ -56,6 +74,9 @@ export interface KpiWidget {
   label: string;
   /** Defaults to "sum" for backward compatibility */
   metric?: AggregationMetric;
+  /** Show delta compared to previous period */
+  compareEnabled?: boolean;
+  hideNulls?: boolean;
 }
 
 export interface LineWidget {
@@ -67,6 +88,9 @@ export interface LineWidget {
   /** Defaults to "sum" for backward compatibility */
   metric?: AggregationMetric;
   timeGrain?: TimeGrain;
+  hideNulls?: boolean;
+  customDateRange?: CustomDateRange;
+  secondGroupBy?: string;
 }
 
 export interface BarWidget {
@@ -79,6 +103,9 @@ export interface BarWidget {
   metric?: AggregationMetric;
   sort?: SortDirection;
   topN?: number;
+  showOtherBucket?: boolean;
+  hideNulls?: boolean;
+  secondGroupBy?: string;
 }
 
 export interface PieWidget {
@@ -91,6 +118,8 @@ export interface PieWidget {
   metric?: AggregationMetric;
   sort?: SortDirection;
   topN?: number;
+  showOtherBucket?: boolean;
+  hideNulls?: boolean;
 }
 
 export interface TableWidget {

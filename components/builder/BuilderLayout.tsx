@@ -11,6 +11,7 @@ import {
   applyDashboardFilters,
   formatDashboardFilterLabel,
   getDatasetFields,
+  getDateFields,
   getFieldValueOptions,
 } from "@/lib/dashlink/filters";
 import type { DashboardProject } from "@/lib/supabase/types";
@@ -53,6 +54,9 @@ export default function BuilderLayout({ initialProject }: Props) {
   const [selectedFilterField, setSelectedFilterField] = useState("");
   const [selectedFilterValue, setSelectedFilterValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilterField, setDateFilterField] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -64,6 +68,7 @@ export default function BuilderLayout({ initialProject }: Props) {
     () => getDatasetFields(sourceData),
     [sourceData],
   );
+  const dateFields = useMemo(() => getDateFields(sourceData), [sourceData]);
   const valueOptions = useMemo(
     () =>
       selectedFilterField
@@ -106,6 +111,12 @@ export default function BuilderLayout({ initialProject }: Props) {
       setSelectedFilterValue(valueOptions[0]);
     }
   }, [selectedFilterValue, valueOptions]);
+
+  useEffect(() => {
+    if (dateFields.length > 0 && !dateFilterField) {
+      setDateFilterField(dateFields[0]);
+    }
+  }, [dateFields, dateFilterField]);
 
   useEffect(() => {
     if (!hasMountedRef.current) {
@@ -287,6 +298,20 @@ export default function BuilderLayout({ initialProject }: Props) {
       query,
     });
     setSearchQuery("");
+  };
+
+  const handleAddDateRangeFilter = () => {
+    if (!dateFilterField || !dateFrom || !dateTo) return;
+
+    addFilter({
+      id: createFilterId(),
+      type: "dateRange",
+      field: dateFilterField,
+      from: dateFrom,
+      to: dateTo,
+    });
+    setDateFrom("");
+    setDateTo("");
   };
 
   return (
@@ -528,6 +553,45 @@ export default function BuilderLayout({ initialProject }: Props) {
                 {filteredData.length} / {sourceData.length} rows
               </span>
             </div>
+
+            {dateFields.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  Date
+                </span>
+                <select
+                  value={dateFilterField}
+                  onChange={(e) => setDateFilterField(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+                >
+                  {dateFields.map((field) => (
+                    <option key={field} value={field}>
+                      {field}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+                />
+                <span className="text-xs text-zinc-400">→</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+                />
+                <button
+                  onClick={handleAddDateRangeFilter}
+                  disabled={!dateFilterField || !dateFrom || !dateTo}
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Add date filter
+                </button>
+              </div>
+            )}
 
             {hasFilters && (
               <div className="mt-2 flex flex-wrap gap-2">

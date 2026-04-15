@@ -30,6 +30,8 @@ export default function PieWidgetChart({ widget, data }: Props) {
     metric: widget.metric,
     sort: widget.sort,
     topN: widget.topN ?? 8,
+    showOtherBucket: widget.showOtherBucket,
+    hideNulls: widget.hideNulls,
   });
   const chartData = metricRows.map((row) => ({
     name: String(row[widget.category] ?? "(unknown)"),
