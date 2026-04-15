@@ -1,61 +1,74 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useProjectStore } from "@/lib/store/project-store";
-import { useAuthStore } from "@/lib/store/auth-store";
-import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
+import type {
+  DashboardFilter,
+  DashWidget,
+  GridItem,
+} from "@/lib/dashlink/builder-types";
 import {
   applyDashboardFilters,
   formatDashboardFilterLabel,
   getDatasetFields,
+  getDateFields,
   getFieldValueOptions,
 } from "@/lib/dashlink/filters";
+import type { DashboardProject } from "@/lib/supabase/types";
 import GridCanvas from "./GridCanvas";
 import FieldPanel from "./FieldPanel";
 import ThemeSelector from "./ThemeSelector";
 
 interface Props {
-  projectId: string;
+  initialProject: DashboardProject;
 }
 
 function createFilterId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-export default function BuilderLayout({ projectId }: Props) {
-  const router = useRouter();
-  const { user } = useAuthStore();
-  const {
-    projects,
-    updateName,
-    reorderWidgets,
-    resizeWidget,
-    addWidget,
-    removeWidget,
-    updateWidget,
-    updateTheme,
-    addFilter,
-    removeFilter,
-    clearFilters,
-  } = useProjectStore();
+function projectToPayload(project: DashboardProject) {
+  return {
+    name: project.name,
+    apiUrl: project.apiUrl,
+    authConfig: project.authConfig,
+    dataPath: project.dataPath,
+    config: project.config,
+    widgets: project.widgets,
+    layout: project.layout,
+    data: project.data,
+    theme: project.theme,
+    filters: project.filters,
+    isPublic: project.isPublic,
+  };
+}
 
-  const project = projects.find((p) => p.id === projectId);
-  const sourceData = project?.data ?? [];
-  const activeFilters = project?.filters ?? [];
+export default function BuilderLayout({ initialProject }: Props) {
+  const [project, setProject] = useState(initialProject);
+  const sourceData = project.data;
+  const activeFilters = project.filters;
 
-  const [title, setTitle] = useState(project?.name ?? "");
+  const [title, setTitle] = useState(initialProject.name);
   const [shareCopied, setShareCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [selectedFilterField, setSelectedFilterField] = useState("");
   const [selectedFilterValue, setSelectedFilterValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilterField, setDateFilterField] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [saveState, setSaveState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const hasMountedRef = useRef(false);
+  const lastSavedRef = useRef(JSON.stringify(projectToPayload(initialProject)));
 
   const filterFields = useMemo(
     () => getDatasetFields(sourceData),
     [sourceData],
   );
+  const dateFields = useMemo(() => getDateFields(sourceData), [sourceData]);
   const valueOptions = useMemo(
     () =>
       selectedFilterField
@@ -67,18 +80,14 @@ export default function BuilderLayout({ projectId }: Props) {
     () => applyDashboardFilters(sourceData, activeFilters),
     [sourceData, activeFilters],
   );
+  const serializedProject = useMemo(
+    () => JSON.stringify(projectToPayload(project)),
+    [project],
+  );
 
   useEffect(() => {
-    if (!user) router.replace("/login");
-  }, [user, router]);
-
-  useEffect(() => {
-    if (user && !project) router.replace("/dashboard");
-  }, [user, project, router]);
-
-  useEffect(() => {
-    setTitle(project?.name ?? "");
-  }, [project?.name]);
+    setTitle(project.name);
+  }, [project.name]);
 
   useEffect(() => {
     if (filterFields.length === 0) {
@@ -103,17 +112,84 @@ export default function BuilderLayout({ projectId }: Props) {
     }
   }, [selectedFilterValue, valueOptions]);
 
-  if (!user || !project) return null;
+  useEffect(() => {
+    if (dateFields.length > 0 && !dateFilterField) {
+      setDateFilterField(dateFields[0]);
+    }
+  }, [dateFields, dateFilterField]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
+    if (serializedProject === lastSavedRef.current) {
+      return;
+    }
+
+    setSaveState("saving");
+    setSaveError(null);
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/projects/${project.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: serializedProject,
+          signal: controller.signal,
+        });
+        const json = await res.json();
+
+        if (!res.ok) {
+          throw new Error(json.error ?? "Could not save dashboard.");
+        }
+
+        const nextProject = json.project as DashboardProject;
+        lastSavedRef.current = JSON.stringify(projectToPayload(nextProject));
+        setProject(nextProject);
+        setSaveState("saved");
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        setSaveState("error");
+        setSaveError(
+          error instanceof Error ? error.message : "Could not save dashboard.",
+        );
+      }
+    }, 600);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [project.id, serializedProject]);
 
   const hasFilters = activeFilters.length > 0;
 
+  const updateProject = (
+    updater: (current: DashboardProject) => DashboardProject,
+  ) => {
+    setProject((current) => updater(current));
+  };
+
   const handleTitleSave = () => {
-    updateName(projectId, title.trim() || "Untitled Dashboard");
+    updateProject((current) => ({
+      ...current,
+      name: title.trim() || "Untitled Dashboard",
+    }));
     setEditingTitle(false);
   };
 
   const handleShare = () => {
-    const url = `${window.location.origin}/view/${projectId}`;
+    if (!project.isPublic) return;
+
+    const url = `${window.location.origin}/view/${project.publicSlug}`;
     navigator.clipboard.writeText(url).then(() => {
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2500);
@@ -121,29 +197,90 @@ export default function BuilderLayout({ projectId }: Props) {
   };
 
   const handleReorder = (newWidgets: DashWidget[], newLayout: GridItem[]) => {
-    reorderWidgets(projectId, newWidgets, newLayout);
+    updateProject((current) => ({
+      ...current,
+      widgets: newWidgets,
+      layout: newLayout,
+    }));
   };
 
   const handleResizeWidget = (widgetId: string, height: number) => {
-    resizeWidget(projectId, widgetId, height);
+    updateProject((current) => ({
+      ...current,
+      layout: current.layout.map((item) =>
+        item.i === widgetId ? { ...item, height } : item,
+      ),
+    }));
   };
 
   const handleAddWidget = (widget: DashWidget, gridItem: GridItem) => {
-    addWidget(projectId, widget, gridItem);
+    updateProject((current) => ({
+      ...current,
+      widgets: [...current.widgets, widget],
+      layout: [...current.layout, gridItem],
+    }));
   };
 
   const handleRemoveWidget = (widgetId: string) => {
-    removeWidget(projectId, widgetId);
+    updateProject((current) => ({
+      ...current,
+      widgets: current.widgets.filter((widget) => widget.id !== widgetId),
+      layout: current.layout.filter((item) => item.i !== widgetId),
+    }));
   };
 
   const handleUpdateWidget = (widgetId: string, patch: Partial<DashWidget>) => {
-    updateWidget(projectId, widgetId, patch);
+    updateProject((current) => ({
+      ...current,
+      widgets: current.widgets.map((widget) =>
+        widget.id === widgetId
+          ? ({ ...widget, ...patch } as DashWidget)
+          : widget,
+      ),
+    }));
+  };
+
+  const addFilter = (filter: DashboardFilter) => {
+    updateProject((current) => {
+      const exists = current.filters.some((existing) => {
+        if (existing.type !== filter.type) return false;
+        if (existing.type === "search" && filter.type === "search") {
+          return existing.query === filter.query;
+        }
+
+        return (
+          existing.type === "value" &&
+          filter.type === "value" &&
+          existing.field === filter.field &&
+          existing.value === filter.value
+        );
+      });
+
+      return {
+        ...current,
+        filters: exists ? current.filters : [...current.filters, filter],
+      };
+    });
+  };
+
+  const removeFilter = (filterId: string) => {
+    updateProject((current) => ({
+      ...current,
+      filters: current.filters.filter((filter) => filter.id !== filterId),
+    }));
+  };
+
+  const clearFilters = () => {
+    updateProject((current) => ({
+      ...current,
+      filters: [],
+    }));
   };
 
   const handleAddValueFilter = () => {
     if (!selectedFilterField || !selectedFilterValue) return;
 
-    addFilter(projectId, {
+    addFilter({
       id: createFilterId(),
       type: "value",
       field: selectedFilterField,
@@ -155,12 +292,26 @@ export default function BuilderLayout({ projectId }: Props) {
     const query = searchQuery.trim();
     if (!query) return;
 
-    addFilter(projectId, {
+    addFilter({
       id: createFilterId(),
       type: "search",
       query,
     });
     setSearchQuery("");
+  };
+
+  const handleAddDateRangeFilter = () => {
+    if (!dateFilterField || !dateFrom || !dateTo) return;
+
+    addFilter({
+      id: createFilterId(),
+      type: "dateRange",
+      field: dateFilterField,
+      from: dateFrom,
+      to: dateTo,
+    });
+    setDateFrom("");
+    setDateTo("");
   };
 
   return (
@@ -224,22 +375,52 @@ export default function BuilderLayout({ projectId }: Props) {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            <span className="hidden rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600 sm:inline-flex">
+              {saveState === "saving"
+                ? "Saving..."
+                : saveState === "saved"
+                  ? "Saved"
+                  : saveState === "error"
+                    ? "Save failed"
+                    : "Ready"}
+            </span>
             <ThemeSelector
               currentThemeId={project.theme ?? "zinc"}
-              onSelect={(themeId) => updateTheme(projectId, themeId)}
+              onSelect={(themeId) =>
+                updateProject((current) => ({ ...current, theme: themeId }))
+              }
             />
+            <button
+              onClick={() =>
+                updateProject((current) => ({
+                  ...current,
+                  isPublic: !current.isPublic,
+                }))
+              }
+              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                project.isPublic
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300"
+                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400"
+              }`}
+            >
+              {project.isPublic ? "Public link on" : "Private draft"}
+            </button>
             {project.widgets.length > 0 && (
               <Link
-                href={`/view/${projectId}`}
+                href={`/view/${project.publicSlug}`}
                 target="_blank"
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-400"
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                  project.isPublic
+                    ? "border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                    : "pointer-events-none border-zinc-100 text-zinc-300"
+                }`}
               >
                 Preview ↗
               </Link>
             )}
             <button
               onClick={handleShare}
-              disabled={project.widgets.length === 0}
+              disabled={project.widgets.length === 0 || !project.isPublic}
               className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {shareCopied ? (
@@ -303,6 +484,9 @@ export default function BuilderLayout({ projectId }: Props) {
                   : "Basic Auth"}
             </span>
           )}
+          {saveError && (
+            <p className="mt-2 text-xs text-red-500">{saveError}</p>
+          )}
         </div>
 
         {sourceData.length > 0 && (
@@ -359,7 +543,7 @@ export default function BuilderLayout({ projectId }: Props) {
               </button>
               {hasFilters && (
                 <button
-                  onClick={() => clearFilters(projectId)}
+                  onClick={clearFilters}
                   className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700"
                 >
                   Clear all
@@ -370,6 +554,45 @@ export default function BuilderLayout({ projectId }: Props) {
               </span>
             </div>
 
+            {dateFields.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  Date
+                </span>
+                <select
+                  value={dateFilterField}
+                  onChange={(e) => setDateFilterField(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+                >
+                  {dateFields.map((field) => (
+                    <option key={field} value={field}>
+                      {field}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+                />
+                <span className="text-xs text-zinc-400">→</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+                />
+                <button
+                  onClick={handleAddDateRangeFilter}
+                  disabled={!dateFilterField || !dateFrom || !dateTo}
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Add date filter
+                </button>
+              </div>
+            )}
+
             {hasFilters && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {activeFilters.map((filter) => (
@@ -379,7 +602,7 @@ export default function BuilderLayout({ projectId }: Props) {
                   >
                     {formatDashboardFilterLabel(filter)}
                     <button
-                      onClick={() => removeFilter(projectId, filter.id)}
+                      onClick={() => removeFilter(filter.id)}
                       className="rounded-full text-zinc-400 transition hover:text-zinc-700"
                       aria-label={`Remove ${formatDashboardFilterLabel(filter)}`}
                     >

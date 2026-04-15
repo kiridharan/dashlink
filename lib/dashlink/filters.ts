@@ -6,8 +6,27 @@ function normalizeValue(value: DataValue): string {
   return String(value);
 }
 
+function toDateValue(value: DataValue): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function getDatasetFields(data: Dataset): string[] {
   return data.length > 0 ? Object.keys(data[0]) : [];
+}
+
+export function getDateFields(data: Dataset): string[] {
+  if (data.length === 0) return [];
+  const fields = Object.keys(data[0]);
+  return fields.filter((field) => {
+    const samples = data.slice(0, 20).map((row) => row[field]);
+    const nonNull = samples.filter(
+      (v) => v !== null && v !== undefined && v !== "",
+    );
+    if (nonNull.length === 0) return false;
+    return nonNull.every((v) => typeof v === "string" && /^\d{4}[-/]/.test(v));
+  });
 }
 
 export function getFieldValueOptions(data: Dataset, field: string): string[] {
@@ -34,6 +53,16 @@ export function applyDashboardFilters(
         return normalizeValue(row[filter.field] ?? null) === filter.value;
       }
 
+      if (filter.type === "dateRange") {
+        const val = toDateValue(row[filter.field]);
+        if (!val) return false;
+        const from = new Date(filter.from);
+        const to = new Date(filter.to);
+        // set to end of day for inclusive range
+        to.setHours(23, 59, 59, 999);
+        return val >= from && val <= to;
+      }
+
       const query = filter.query.trim().toLowerCase();
       if (!query) return true;
 
@@ -47,6 +76,10 @@ export function applyDashboardFilters(
 export function formatDashboardFilterLabel(filter: DashboardFilter): string {
   if (filter.type === "search") {
     return `Contains: ${filter.query}`;
+  }
+
+  if (filter.type === "dateRange") {
+    return `${filter.field}: ${filter.from} → ${filter.to}`;
   }
 
   return `${filter.field}: ${filter.value}`;

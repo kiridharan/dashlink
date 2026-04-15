@@ -1,9 +1,10 @@
 import Link from "next/link";
-import type { Project } from "@/lib/store/project-store";
+import type { DashboardProject } from "@/lib/supabase/types";
 
 interface Props {
-  project: Project;
+  project: DashboardProject;
   onDelete: (id: string) => void;
+  isDeleting?: boolean;
 }
 
 function relativeTime(iso: string): string {
@@ -18,7 +19,11 @@ function relativeTime(iso: string): string {
   });
 }
 
-export default function ProjectCard({ project, onDelete }: Props) {
+export default function ProjectCard({
+  project,
+  onDelete,
+  isDeleting = false,
+}: Props) {
   const widgetCount = project.widgets.length;
   const hasData = project.data.length > 0;
 
@@ -28,7 +33,8 @@ export default function ProjectCard({ project, onDelete }: Props) {
       <button
         onClick={() => onDelete(project.id)}
         aria-label="Delete project"
-        className="absolute right-4 top-4 hidden rounded-md p-1 text-zinc-300 transition hover:bg-red-50 hover:text-red-500 group-hover:flex"
+        disabled={isDeleting}
+        className="absolute right-4 top-4 hidden rounded-md p-1 text-zinc-300 transition hover:bg-red-50 hover:text-red-500 group-hover:flex disabled:opacity-40"
       >
         <svg
           width="14"
@@ -54,6 +60,12 @@ export default function ProjectCard({ project, onDelete }: Props) {
           />
           <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
             {hasData ? "Active" : "No data"}
+          </span>
+          <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+            •
+          </span>
+          <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+            {project.isPublic ? "Public" : "Private"}
           </span>
         </div>
         <h3 className="text-base font-semibold text-zinc-900 leading-tight">
@@ -85,7 +97,7 @@ export default function ProjectCard({ project, onDelete }: Props) {
         </Link>
         {hasData && (
           <Link
-            href={`/view/${project.id}`}
+            href={`/view/${project.publicSlug}`}
             target="_blank"
             className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600 transition hover:border-zinc-400"
           >

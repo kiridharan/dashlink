@@ -1,30 +1,20 @@
-"use client";
-
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 import CreateProjectWizard from "@/components/builder/CreateProjectWizard";
-import { useAuthStore } from "@/lib/store/auth-store";
-import { useProjectStore } from "@/lib/store/project-store";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export default function NewProjectPage() {
-  const router = useRouter();
-  const { user } = useAuthStore();
-  const { createProjectFull } = useProjectStore();
+export default async function NewProjectPage() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  useEffect(() => {
-    if (!user) router.replace("/login");
-  }, [user, router]);
-
-  if (!user) return null;
+  if (!user) {
+    redirect("/login");
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <CreateProjectWizard
-        mode="page"
-        onClose={() => router.push("/dashboard")}
-        onCreated={(id) => router.push(`/projects/${id}`)}
-        createProjectFull={createProjectFull}
-      />
+      <CreateProjectWizard mode="page" />
     </div>
   );
 }

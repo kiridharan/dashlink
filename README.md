@@ -41,9 +41,9 @@ DashLink is an open-source, no-code dashboard builder. Point it at any public JS
 - **5 widget types** — KPI cards, line charts, bar charts, pie charts, and data tables
 - **17 themes** — design-system-inspired (shadcn, Material, Tailwind UI, PrimeReact, Ant Design, Chakra UI, Mantine) and color palettes
 - **Per-theme chart style** — each theme ships its own bar radius, line curve, area fill, grid style, card shadow, and tooltip shape
-- **Shareable links** — every dashboard gets a permanent public URL you can send to anyone
+- **Shareable links** — every dashboard gets a permanent public URL backed by a stored public slug
 - **Authenticated header** — SSRF-protected server-side data proxy with support for Bearer, API key, and Basic auth
-- **Offline-first** — all project data is stored locally via Zustand + `localStorage`; no server required to use
+- **Supabase-backed auth and storage** — real accounts, protected project CRUD, and secure public dashboard delivery
 
 ---
 
@@ -58,7 +58,7 @@ DashLink is an open-source, no-code dashboard builder. Point it at any public JS
 | Charts          | Recharts 3                             |
 | Drag-and-drop   | @dnd-kit/core 6 + @dnd-kit/sortable 10 |
 | Resize          | re-resizable 6                         |
-| State           | Zustand 5 (with `persist` middleware)  |
+| State           | React state + Supabase persistence     |
 | Font            | Geist (Vercel)                         |
 | Package manager | pnpm                                   |
 | Linting         | ESLint 9                               |
@@ -110,7 +110,7 @@ pnpm build
 
 ## Project Structure
 
-```
+```text
 dashlink/
 ├── app/                        # Next.js App Router pages
 │   ├── page.tsx                # Landing page
@@ -184,7 +184,7 @@ dashlink/
 
 **Example public APIs that work out of the box:**
 
-```
+```text
 https://jsonplaceholder.typicode.com/posts
 https://jsonplaceholder.typicode.com/todos
 https://api.coindesk.com/v1/bpi/currentprice.json
@@ -273,7 +273,7 @@ The viewer renders the saved widget configuration on top of freshly fetched live
 
 All external data requests are routed through a server-side proxy to protect against CORS issues and to keep API credentials out of the browser.
 
-```
+```http
 POST /api/data/proxy
 Content-Type: application/json
 ```
@@ -307,28 +307,15 @@ Content-Type: application/json
 
 ### State Management
 
-All application state lives client-side in two Zustand stores, both persisted to `localStorage`:
+Authentication and durable dashboard storage now live in Supabase.
 
-**`auth-store`** — current user session (`{ id, name, email }`). Login/signup write here; the middleware persists it across page refreshes.
+**Supabase Auth** manages cookie-backed sessions so protected routes redirect before rendering.
 
-**`project-store`** — the full project graph:
+**`projects`** stores builder metadata, source configuration, theme, widgets, layout, filters, and share visibility.
 
-```ts
-interface Project {
-  id: string;
-  name: string;
-  apiUrl: string;
-  authConfig: AuthConfig;
-  dataPath?: string;
-  config: DashboardConfig; // auto-detected chart config
-  widgets: DashWidget[]; // current widget instances
-  layout: GridItem[]; // grid positions & heights
-  data: Dataset; // last-fetched rows
-  theme: string; // theme ID
-}
-```
+**`project_snapshots`** stores the latest resolved tabular dataset used by both the builder and the public share page.
 
-No backend persistence exists in the current version. Cloud sync via Supabase is on the roadmap.
+Client components still keep short-lived UI state for editing and drag/drop interactions, but the source of truth is server-side.
 
 ---
 
@@ -356,8 +343,8 @@ Drag-and-drop is provided by `@dnd-kit` using the `rectSortingStrategy`. Widget 
 
 ## Roadmap
 
-- [ ] **Supabase persistence** — save projects and share links server-side
-- [ ] **Supabase Auth** — replace the local session with real authentication
+- [x] **Supabase persistence** — save projects and share links server-side
+- [x] **Supabase Auth** — replace the local session with real authentication
 - [ ] **AI dashboard generation** — describe your data in natural language to get a starting layout (scaffold in `app/api/ai/generate-dashboard/`)
 - [ ] **MCP data connector** — connect dashboards to MCP tool servers (scaffold in `lib/mcp/`)
 - [ ] **Multi-series charts** — plot multiple Y columns on a single chart
