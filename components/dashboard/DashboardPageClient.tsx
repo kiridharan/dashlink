@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import ProjectCard from "@/components/projects/ProjectCard";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { DashboardProject } from "@/lib/supabase/types";
+import WalkthroughTour from "@/components/walkthrough/WalkthroughTour";
+import {
+  DASHBOARD_TOUR_KEY,
+  dashboardTourSteps,
+} from "@/components/walkthrough/tours";
 
 interface Props {
   initialProjects: DashboardProject[];
@@ -21,6 +26,7 @@ export default function DashboardPageClient({
   const [signingOut, setSigningOut] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tourReplay, setTourReplay] = useState(0);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -78,6 +84,22 @@ export default function DashboardPageClient({
           <div className="flex items-center gap-4">
             <span className="text-sm text-zinc-500">{userLabel}</span>
             <button
+              type="button"
+              data-tour="replay-tour"
+              onClick={() => {
+                try {
+                  window.localStorage.removeItem(DASHBOARD_TOUR_KEY);
+                } catch {
+                  /* ignore */
+                }
+                setTourReplay((n) => n + 1);
+              }}
+              className="text-sm text-zinc-400 transition hover:text-zinc-700"
+              title="Replay product tour"
+            >
+              Tour
+            </button>
+            <button
               onClick={handleSignOut}
               disabled={signingOut}
               className="text-sm text-zinc-400 transition hover:text-zinc-700 disabled:opacity-40"
@@ -100,6 +122,7 @@ export default function DashboardPageClient({
           </div>
           <Link
             href="/projects/new"
+            data-tour="new-dashboard"
             className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700"
           >
             <svg
@@ -127,7 +150,10 @@ export default function DashboardPageClient({
         )}
 
         {projects.length > 0 ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            data-tour="project-list"
+            className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+          >
             {projects.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -171,6 +197,12 @@ export default function DashboardPageClient({
           </div>
         )}
       </main>
+      <WalkthroughTour
+        key={tourReplay}
+        storageKey={DASHBOARD_TOUR_KEY}
+        steps={dashboardTourSteps}
+        forceShow={tourReplay > 0}
+      />
     </div>
   );
 }

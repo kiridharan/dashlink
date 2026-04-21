@@ -18,6 +18,11 @@ import type { DashboardProject } from "@/lib/supabase/types";
 import GridCanvas from "./GridCanvas";
 import FieldPanel from "./FieldPanel";
 import ThemeSelector from "./ThemeSelector";
+import WalkthroughTour from "@/components/walkthrough/WalkthroughTour";
+import {
+  BUILDER_TOUR_KEY,
+  builderTourSteps,
+} from "@/components/walkthrough/tours";
 
 interface Props {
   initialProject: DashboardProject;
@@ -375,7 +380,10 @@ export default function BuilderLayout({ initialProject }: Props) {
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600 sm:inline-flex">
+            <span
+              data-tour="save-state"
+              className="hidden rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600 sm:inline-flex"
+            >
               {saveState === "saving"
                 ? "Saving..."
                 : saveState === "saved"
@@ -420,6 +428,7 @@ export default function BuilderLayout({ initialProject }: Props) {
             )}
             <Link
               href={`/projects/${project.id}/history`}
+              data-tour="nav-history"
               className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-400"
               title="Time-travel & version history"
             >
@@ -427,13 +436,23 @@ export default function BuilderLayout({ initialProject }: Props) {
             </Link>
             <Link
               href={`/projects/${project.id}/alerts`}
+              data-tour="nav-alerts"
               className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-400"
               title="Scheduled alerts"
             >
               Alerts
             </Link>
+            <Link
+              href={`/projects/${project.id}/embed`}
+              data-tour="nav-embed"
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-400"
+              title="Embed preview & snippets"
+            >
+              Embed
+            </Link>
             <button
               onClick={handleShare}
+              data-tour="share"
               disabled={project.widgets.length === 0 || !project.isPublic}
               className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -504,7 +523,10 @@ export default function BuilderLayout({ initialProject }: Props) {
         </div>
 
         {sourceData.length > 0 && (
-          <div className="border-t border-zinc-100 px-5 py-3">
+          <div
+            data-tour="filters"
+            className="border-t border-zinc-100 px-5 py-3"
+          >
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
                 Filters
@@ -644,13 +666,15 @@ export default function BuilderLayout({ initialProject }: Props) {
       </header>
 
       <div className="flex flex-1 gap-5 p-5">
-        <FieldPanel
-          data={project.data}
-          apiUrl={project.apiUrl}
-          authType={project.authConfig?.type}
-          existingWidgetIds={new Set(project.widgets.map((w) => w.id))}
-          onAdd={handleAddWidget}
-        />
+        <div data-tour="widget-palette" data-tour-secondary="field-panel">
+          <FieldPanel
+            data={project.data}
+            apiUrl={project.apiUrl}
+            authType={project.authConfig?.type}
+            existingWidgetIds={new Set(project.widgets.map((w) => w.id))}
+            onAdd={handleAddWidget}
+          />
+        </div>
 
         <div className="flex-1 overflow-auto">
           <GridCanvas
@@ -665,6 +689,7 @@ export default function BuilderLayout({ initialProject }: Props) {
           />
         </div>
       </div>
+      <WalkthroughTour storageKey={BUILDER_TOUR_KEY} steps={builderTourSteps} />
     </div>
   );
 }
