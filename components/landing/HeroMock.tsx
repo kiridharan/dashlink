@@ -50,10 +50,10 @@ export default function HeroMock() {
 
   return (
     <div className="relative">
-      {/* Soft halo */}
-      <div className="pointer-events-none absolute -inset-6 rounded-4xl bg-linear-to-tr from-violet-200/50 via-transparent to-cyan-200/50 blur-2xl" />
+      {/* Subtle enterprise halo */}
+      <div className="pointer-events-none absolute -inset-4 rounded-3xl bg-[radial-gradient(ellipse_60%_60%_at_50%_0%,rgba(79,70,229,0.10),transparent_70%)]" />
 
-      <div className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_20px_70px_-30px_rgba(15,23,42,0.35)]">
+      <div className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_8px_30px_-12px_rgba(15,23,42,0.15)]">
         {/* Window chrome */}
         <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/60 px-4 py-2.5">
           <div className="flex gap-1.5">
@@ -85,9 +85,7 @@ export default function HeroMock() {
               label={KPI_LABELS[i]}
               value={target}
               prefix={KPI_PREFIXES[i]}
-              accent={
-                ["bg-violet-500", "bg-cyan-500", "bg-fuchsia-500"][i] ?? ""
-              }
+              accent={["bg-indigo-600", "bg-zinc-400", "bg-zinc-400"][i] ?? ""}
             />
           ))}
           <div className="col-span-1 rounded-xl border border-zinc-100 bg-white p-3">
@@ -110,7 +108,7 @@ export default function HeroMock() {
               {[40, 65, 45, 80, 55, 90, 70, 85, 60, 95, 75, 88].map((h, i) => (
                 <div
                   key={i}
-                  className="flex-1 rounded-t bg-linear-to-t from-zinc-900 to-zinc-600"
+                  className="flex-1 rounded-t bg-linear-to-t from-indigo-600 to-indigo-400"
                   style={{
                     height: "0%",
                     animation: `dashlink-bar 900ms cubic-bezier(.2,.8,.2,1) forwards`,
@@ -136,12 +134,12 @@ export default function HeroMock() {
                 <linearGradient id="dl-line" x1="0" x2="0" y1="0" y2="1">
                   <stop
                     offset="0%"
-                    stopColor="rgb(139,92,246)"
+                    stopColor="rgb(79,70,229)"
                     stopOpacity="0.35"
                   />
                   <stop
                     offset="100%"
-                    stopColor="rgb(139,92,246)"
+                    stopColor="rgb(79,70,229)"
                     stopOpacity="0"
                   />
                 </linearGradient>
@@ -153,7 +151,7 @@ export default function HeroMock() {
               <path
                 d="M0,28 L10,24 L20,26 L30,18 L40,20 L50,12 L60,16 L70,8 L80,10 L90,4 L100,6"
                 fill="none"
-                stroke="rgb(139,92,246)"
+                stroke="rgb(79,70,229)"
                 strokeWidth="1.4"
                 strokeLinecap="round"
                 strokeLinejoin="round"

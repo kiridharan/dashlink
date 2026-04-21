@@ -34,16 +34,19 @@ function inferKind(samples: unknown[]): FieldKind {
 }
 
 const KIND_BADGE: Record<FieldKind, { label: string; cls: string }> = {
-  numeric: { label: "123", cls: "bg-blue-50 text-blue-600 border-blue-200" },
+  numeric: {
+    label: "123",
+    cls: "bg-indigo-50 text-indigo-700 border-indigo-100",
+  },
   date: {
     label: "Date",
-    cls: "bg-purple-50 text-purple-600 border-purple-200",
+    cls: "bg-zinc-50 text-zinc-600 border-zinc-200",
   },
   categorical: {
     label: "ABC",
-    cls: "bg-amber-50 text-amber-600 border-amber-200",
+    cls: "bg-zinc-50 text-zinc-600 border-zinc-200",
   },
-  text: { label: "Txt", cls: "bg-zinc-100 text-zinc-500 border-zinc-200" },
+  text: { label: "Txt", cls: "bg-zinc-50 text-zinc-500 border-zinc-200" },
 };
 
 // Generic widget templates (for adding blank widgets)

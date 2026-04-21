@@ -98,12 +98,7 @@ export default function LandingPage() {
       />
       <div
         aria-hidden
-        className="dl-blob pointer-events-none absolute -left-40 top-[-10%] h-96 w-96 rounded-full bg-violet-200/40 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="dl-blob pointer-events-none absolute right-[-10%] top-[20%] h-80 w-80 rounded-full bg-cyan-200/40 blur-3xl"
-        style={{ animationDelay: "-5s" }}
+        className="pointer-events-none absolute inset-x-0 top-0 -z-0 h-[520px] bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(79,70,229,0.08),transparent_70%)]"
       />
 
       {/* Nav */}
@@ -145,16 +140,13 @@ export default function LandingPage() {
         <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
           <Reveal>
             <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-medium text-zinc-600 shadow-sm">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              </span>
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
               Open beta — free
             </span>
             <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight text-zinc-900 sm:text-6xl">
               Any JSON API,
               <br />
-              <span className="bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-indigo-700 to-indigo-500 bg-clip-text text-transparent">
                 live dashboard.
               </span>
             </h1>
@@ -236,7 +228,7 @@ export default function LandingPage() {
           </p>
           <h2 className="mt-3 text-center text-3xl font-semibold tracking-tight sm:text-4xl">
             From raw JSON to{" "}
-            <span className="bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-indigo-700 to-indigo-500 bg-clip-text text-transparent">
               shipped dashboard
             </span>
           </h2>
@@ -269,7 +261,7 @@ export default function LandingPage() {
           </p>
           <h2 className="mt-3 text-center text-3xl font-semibold tracking-tight sm:text-4xl">
             Up and running in{" "}
-            <span className="bg-gradient-to-r from-violet-600 via-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-indigo-700 to-indigo-500 bg-clip-text text-transparent">
               60 seconds
             </span>
           </h2>
@@ -283,7 +275,7 @@ export default function LandingPage() {
           {STEPS.map((s, i) => (
             <Reveal key={s.n} delay={i * 120}>
               <div className="relative rounded-2xl border border-zinc-200 bg-white p-6">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-900 font-mono text-xs font-semibold text-white">
+                <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 text-xs font-semibold text-white">
                   {s.n}
                 </div>
                 <h3 className="mt-4 text-base font-semibold text-zinc-900">
@@ -340,15 +332,10 @@ export default function LandingPage() {
       {/* CTA */}
       <section className="relative z-10 mx-auto max-w-5xl px-6 pb-24">
         <Reveal>
-          <div className="relative overflow-hidden rounded-3xl bg-zinc-900 px-8 py-16 text-center text-white sm:px-16">
+          <div className="relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 px-8 py-16 text-center text-white sm:px-16">
             <div
               aria-hidden
-              className="dl-blob pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-violet-500/30 blur-3xl"
-            />
-            <div
-              aria-hidden
-              className="dl-blob pointer-events-none absolute -bottom-20 -right-20 h-72 w-72 rounded-full bg-cyan-500/30 blur-3xl"
-              style={{ animationDelay: "-7s" }}
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_60%_at_50%_0%,rgba(99,102,241,0.25),transparent_70%)]"
             />
             <div className="relative">
               <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
