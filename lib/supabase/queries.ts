@@ -254,6 +254,8 @@ export async function createProject(
       throw new Error(snapshotError.message);
     }
 
+    await recordVersion(client, data.id, input, "Initial version");
+
     return mapProjectRow(data as ProjectRow, snapshotPayload);
   }
 
@@ -264,6 +266,7 @@ export async function updateProject(
   client: SupabaseClient,
   projectId: string,
   input: DashboardProjectInput,
+  options: { recordVersion?: boolean; versionSummary?: string } = {},
 ) {
   const { data, error } = await client
     .from("projects")
@@ -293,7 +296,181 @@ export async function updateProject(
     throw new Error(snapshotError.message);
   }
 
+  if (options.recordVersion !== false) {
+    await recordVersion(client, projectId, input, options.versionSummary);
+  }
+
   return mapProjectRow(data as ProjectRow, snapshotPayload);
+}
+
+// ---------------------------------------------------------------------------
+// Version history (time-travel)
+// ---------------------------------------------------------------------------
+
+export interface ProjectVersion {
+  id: string;
+  projectId: string;
+  version: number;
+  name: string;
+  widgets: DashWidget[];
+  layout: GridItem[];
+  filters: DashboardFilter[];
+  theme: string;
+  summary: string | null;
+  createdAt: string;
+}
+
+interface VersionRow {
+  id: string;
+  project_id: string;
+  version: number;
+  name: string;
+  widgets: unknown;
+  layout: unknown;
+  filters: unknown;
+  theme: string;
+  summary: string | null;
+  created_at: string;
+}
+
+function mapVersionRow(row: VersionRow): ProjectVersion {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    version: row.version,
+    name: row.name,
+    widgets: asWidgets(row.widgets),
+    layout: asLayout(row.layout),
+    filters: asFilters(row.filters),
+    theme: row.theme,
+    summary: row.summary,
+    createdAt: row.created_at,
+  };
+}
+
+async function recordVersion(
+  client: SupabaseClient,
+  projectId: string,
+  input: DashboardProjectInput,
+  summary?: string,
+) {
+  const { data: latest } = await client
+    .from("project_versions")
+    .select("version, widgets, layout, filters, theme, name")
+    .eq("project_id", projectId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Skip if nothing meaningful changed since the last version.
+  if (latest) {
+    const currentSig = JSON.stringify({
+      w: input.widgets,
+      l: input.layout,
+      f: input.filters,
+      t: input.theme,
+      n: input.name,
+    });
+    const lastSig = JSON.stringify({
+      w: latest.widgets,
+      l: latest.layout,
+      f: latest.filters,
+      t: latest.theme,
+      n: latest.name,
+    });
+    if (currentSig === lastSig) return;
+  }
+
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  const { error } = await client.from("project_versions").insert({
+    project_id: projectId,
+    version: nextVersion,
+    name: input.name,
+    widgets: input.widgets,
+    layout: input.layout,
+    filters: input.filters,
+    theme: input.theme,
+    summary: summary ?? null,
+  });
+
+  if (error) {
+    // Versioning must never block a save; surface as console only.
+    // eslint-disable-next-line no-console
+    console.error("recordVersion failed", error.message);
+  }
+
+  // Cap history at 50 versions per project.
+  await client
+    .from("project_versions")
+    .delete()
+    .eq("project_id", projectId)
+    .lt("version", nextVersion - 49);
+}
+
+export async function listProjectVersions(
+  client: SupabaseClient,
+  projectId: string,
+): Promise<ProjectVersion[]> {
+  const { data, error } = await client
+    .from("project_versions")
+    .select(
+      "id, project_id, version, name, widgets, layout, filters, theme, summary, created_at",
+    )
+    .eq("project_id", projectId)
+    .order("version", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => mapVersionRow(row as VersionRow));
+}
+
+export async function getProjectVersion(
+  client: SupabaseClient,
+  projectId: string,
+  version: number,
+): Promise<ProjectVersion | null> {
+  const { data, error } = await client
+    .from("project_versions")
+    .select(
+      "id, project_id, version, name, widgets, layout, filters, theme, summary, created_at",
+    )
+    .eq("project_id", projectId)
+    .eq("version", version)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data ? mapVersionRow(data as VersionRow) : null;
+}
+
+export async function restoreProjectVersion(
+  client: SupabaseClient,
+  projectId: string,
+  version: number,
+): Promise<DashboardProject> {
+  const target = await getProjectVersion(client, projectId, version);
+  if (!target) throw new Error("Version not found");
+
+  const current = await getProjectById(client, projectId);
+  if (!current) throw new Error("Project not found");
+
+  return updateProject(
+    client,
+    projectId,
+    {
+      name: target.name,
+      apiUrl: current.apiUrl,
+      authConfig: current.authConfig,
+      dataPath: current.dataPath,
+      config: current.config,
+      widgets: target.widgets,
+      layout: target.layout,
+      data: current.data,
+      theme: target.theme,
+      filters: target.filters,
+      isPublic: current.isPublic,
+    },
+    { versionSummary: `Restored from v${version}` },
+  );
 }
 
 export async function deleteProject(client: SupabaseClient, projectId: string) {

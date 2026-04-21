@@ -6,6 +6,11 @@ import * as XLSX from "xlsx";
 import type { AuthConfig, AuthType, Dataset } from "@/lib/dashlink/types";
 import type { DashWidget, GridItem } from "@/lib/dashlink/builder-types";
 import { formatLabel } from "@/lib/dashlink/utils";
+import {
+  findArrayPathsDeep,
+  flattenJsonToDataset,
+  flattenObject,
+} from "@/lib/dashlink/flatten";
 
 // ---------------------------------------------------------------------------
 // JSON helpers
@@ -21,44 +26,16 @@ function resolvePath(data: unknown, path: string): unknown {
   }, data);
 }
 
-function findArrayPaths(
-  obj: unknown,
-  prefix = "",
-  depth = 0,
-): Array<{ path: string; length: number }> {
-  if (depth > 2 || !obj || typeof obj !== "object" || Array.isArray(obj))
-    return [];
-  const results: Array<{ path: string; length: number }> = [];
-  for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    if (Array.isArray(val)) {
-      results.push({ path, length: val.length });
-    } else if (val && typeof val === "object") {
-      results.push(...findArrayPaths(val, path, depth + 1));
-    }
-  }
-  return results;
+// Deep nested-JSON aware flattening.
+// Accepts arbitrary objects (not just arrays) and turns nested keys into dot paths.
+function toDataset(input: unknown): Dataset {
+  return flattenJsonToDataset(input).slice(0, 500);
 }
 
-function toDataset(input: unknown): Dataset {
-  if (!Array.isArray(input)) return [];
-  return input.slice(0, 500).flatMap((row) => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) return [];
-    const entries = Object.entries(row as Record<string, unknown>).map(
-      ([k, v]) => {
-        if (
-          typeof v === "string" ||
-          typeof v === "number" ||
-          typeof v === "boolean" ||
-          v === null
-        ) {
-          return [k, v] as const;
-        }
-        return [k, v == null ? null : String(v)] as const;
-      },
-    );
-    return [Object.fromEntries(entries)];
-  });
+function findArrayPaths(
+  obj: unknown,
+): Array<{ path: string; length: number; sample: string }> {
+  return findArrayPathsDeep(obj);
 }
 
 function detectGoogleSheetCsvUrl(url: string): string {
@@ -396,12 +373,12 @@ export default function CreateProjectWizard({
     setDataPath(path);
     const resolved = resolvePath(rawResponse, path);
     if (Array.isArray(resolved)) {
-      const dataset = resolved
-        .slice(0, 500)
-        .filter(
-          (r): r is Record<string, unknown> =>
-            typeof r === "object" && r !== null,
-        ) as Dataset;
+      const dataset = resolved.slice(0, 500).map((row) => flattenObject(row));
+      setResolvedData(dataset);
+      setFields(detectFields(dataset));
+    } else if (resolved && typeof resolved === "object") {
+      // Single object → 1-row dataset (still useful for KPI snapshots).
+      const dataset: Dataset = [flattenObject(resolved)];
       setResolvedData(dataset);
       setFields(detectFields(dataset));
     }
@@ -1026,19 +1003,26 @@ export default function CreateProjectWizard({
                       tabular data.
                     </div>
                   ) : (
-                    arrayPaths.map(({ path, length }) => (
+                    arrayPaths.map(({ path, length, sample }) => (
                       <button
                         key={path}
                         onClick={() => handleSelectPath(path)}
-                        className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left text-sm transition ${
+                        className={`flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left text-sm transition ${
                           dataPath === path
                             ? "border-zinc-900 bg-zinc-900 text-white"
                             : "border-zinc-200 hover:border-zinc-400"
                         }`}
                       >
-                        <span className="font-mono">{path}</span>
+                        <span className="flex-1 truncate font-mono">
+                          {path}
+                          <span
+                            className={`ml-2 truncate font-sans text-[11px] ${dataPath === path ? "text-zinc-400" : "text-zinc-400"}`}
+                          >
+                            {sample}
+                          </span>
+                        </span>
                         <span
-                          className={`text-xs ${dataPath === path ? "text-zinc-300" : "text-zinc-400"}`}
+                          className={`shrink-0 text-xs ${dataPath === path ? "text-zinc-300" : "text-zinc-400"}`}
                         >
                           {length} items
                         </span>

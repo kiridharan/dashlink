@@ -418,6 +418,20 @@ export default function BuilderLayout({ initialProject }: Props) {
                 Preview ↗
               </Link>
             )}
+            <Link
+              href={`/projects/${project.id}/history`}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-400"
+              title="Time-travel & version history"
+            >
+              History
+            </Link>
+            <Link
+              href={`/projects/${project.id}/alerts`}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-400"
+              title="Scheduled alerts"
+            >
+              Alerts
+            </Link>
             <button
               onClick={handleShare}
               disabled={project.widgets.length === 0 || !project.isPublic}
