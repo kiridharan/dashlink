@@ -76,11 +76,17 @@ export async function PATCH(
     filters: Array.isArray(body.filters)
       ? (body.filters as DashboardProjectInput["filters"])
       : [],
-    isPublic: typeof body.isPublic === "boolean" ? body.isPublic : true,
+    isPublic: typeof body.isPublic === "boolean" ? body.isPublic : false,
   };
 
   try {
-    const project = await updateProject(supabase, id, input);
+    const versionSummary =
+      typeof body.versionSummary === "string" && body.versionSummary.trim()
+        ? body.versionSummary.trim().slice(0, 120)
+        : undefined;
+    const project = await updateProject(supabase, id, input, {
+      versionSummary,
+    });
     return NextResponse.json({ project });
   } catch (error) {
     const message =

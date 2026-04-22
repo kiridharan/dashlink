@@ -58,11 +58,13 @@ export default function BuilderLayout({ initialProject }: Props) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [saveState, setSaveState] = useState<
-    "idle" | "saving" | "saved" | "error"
+    "idle" | "dirty" | "saving" | "saved" | "error"
   >("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const hasMountedRef = useRef(false);
   const lastSavedRef = useRef(JSON.stringify(projectToPayload(initialProject)));
+  const saveTimerRef = useRef<number | null>(null);
+  const saveControllerRef = useRef<AbortController | null>(null);
 
   const filterFields = useMemo(
     () => getDatasetFields(sourceData),
@@ -118,6 +120,53 @@ export default function BuilderLayout({ initialProject }: Props) {
     }
   }, [dateFields, dateFilterField]);
 
+  const performSave = async (
+    payload: string,
+    options: { versionSummary?: string } = {},
+  ) => {
+    saveControllerRef.current?.abort();
+    const controller = new AbortController();
+    saveControllerRef.current = controller;
+
+    setSaveState("saving");
+    setSaveError(null);
+
+    try {
+      const body = options.versionSummary
+        ? JSON.stringify({
+            ...JSON.parse(payload),
+            versionSummary: options.versionSummary,
+          })
+        : payload;
+
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: controller.signal,
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Could not save dashboard.");
+      }
+
+      const nextProject = json.project as DashboardProject;
+      lastSavedRef.current = JSON.stringify(projectToPayload(nextProject));
+      setProject(nextProject);
+      setSaveState("saved");
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
+      setSaveState("error");
+      setSaveError(
+        error instanceof Error ? error.message : "Could not save dashboard.",
+      );
+    }
+  };
+
+  // Debounced autosave: 30 seconds of inactivity.
   useEffect(() => {
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
@@ -128,47 +177,45 @@ export default function BuilderLayout({ initialProject }: Props) {
       return;
     }
 
-    setSaveState("saving");
-    setSaveError(null);
+    setSaveState("dirty");
 
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/projects/${project.id}`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: serializedProject,
-          signal: controller.signal,
-        });
-        const json = await res.json();
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
 
-        if (!res.ok) {
-          throw new Error(json.error ?? "Could not save dashboard.");
-        }
-
-        const nextProject = json.project as DashboardProject;
-        lastSavedRef.current = JSON.stringify(projectToPayload(nextProject));
-        setProject(nextProject);
-        setSaveState("saved");
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          return;
-        }
-
-        setSaveState("error");
-        setSaveError(
-          error instanceof Error ? error.message : "Could not save dashboard.",
-        );
-      }
-    }, 600);
+    saveTimerRef.current = window.setTimeout(() => {
+      void performSave(serializedProject);
+    }, 30_000);
 
     return () => {
-      controller.abort();
-      window.clearTimeout(timeoutId);
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, serializedProject]);
+
+  const handleManualSave = async () => {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    await performSave(serializedProject, { versionSummary: "Manual save" });
+  };
+
+  // Warn before navigating away with unsaved changes.
+  useEffect(() => {
+    const isDirty = serializedProject !== lastSavedRef.current;
+    if (!isDirty) return;
+
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [serializedProject]);
 
   const hasFilters = activeFilters.length > 0;
 
@@ -375,15 +422,41 @@ export default function BuilderLayout({ initialProject }: Props) {
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600 sm:inline-flex">
+            <span
+              className={`hidden rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline-flex ${
+                saveState === "error"
+                  ? "bg-red-50 text-red-600"
+                  : saveState === "dirty"
+                    ? "bg-amber-50 text-amber-700"
+                    : saveState === "saving"
+                      ? "bg-zinc-100 text-zinc-600"
+                      : saveState === "saved"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-zinc-100 text-zinc-500"
+              }`}
+              title={saveError ?? undefined}
+            >
               {saveState === "saving"
-                ? "Saving..."
+                ? "Saving…"
                 : saveState === "saved"
-                  ? "Saved"
-                  : saveState === "error"
-                    ? "Save failed"
-                    : "Ready"}
+                  ? "All changes saved"
+                  : saveState === "dirty"
+                    ? "Unsaved changes"
+                    : saveState === "error"
+                      ? "Save failed"
+                      : "Ready"}
             </span>
+            <button
+              onClick={handleManualSave}
+              disabled={
+                saveState === "saving" ||
+                serializedProject === lastSavedRef.current
+              }
+              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Save now and create a version snapshot"
+            >
+              Save version
+            </button>
             <ThemeSelector
               currentThemeId={project.theme ?? "zinc"}
               onSelect={(themeId) =>
@@ -397,13 +470,18 @@ export default function BuilderLayout({ initialProject }: Props) {
                   isPublic: !current.isPublic,
                 }))
               }
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
                 project.isPublic
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300"
-                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400"
+                  : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50"
               }`}
+              title={
+                project.isPublic
+                  ? "Currently public — click to unpublish"
+                  : "Currently private — click to publish"
+              }
             >
-              {project.isPublic ? "Public link on" : "Private draft"}
+              {project.isPublic ? "● Published" : "Publish"}
             </button>
             {project.widgets.length > 0 && (
               <Link

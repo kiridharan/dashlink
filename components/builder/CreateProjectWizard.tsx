@@ -527,7 +527,7 @@ export default function CreateProjectWizard({
           layout,
           data: resolvedData,
           filters: [],
-          isPublic: true,
+          isPublic: false,
         }),
       });
       const json = await res.json();
