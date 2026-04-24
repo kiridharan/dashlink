@@ -1,5 +1,5 @@
 import type {
-  DashboardFilter,
+  FilterControl,
   DashWidget,
   GridItem,
 } from "@/lib/dashlink/builder-types";
@@ -25,7 +25,7 @@ export interface DashboardProject {
   layout: GridItem[];
   data: Dataset;
   theme: string;
-  filters: DashboardFilter[];
+  filters: FilterControl[];
 }
 
 export interface DashboardProjectInput {
@@ -38,6 +38,6 @@ export interface DashboardProjectInput {
   layout: GridItem[];
   data: Dataset;
   theme: string;
-  filters: DashboardFilter[];
+  filters: FilterControl[];
   isPublic?: boolean;
 }

@@ -1,13 +1,30 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { getTheme } from "@/lib/dashlink/themes";
+import { applyFilterControls } from "@/lib/dashlink/filters";
+import type { FilterState, FilterValue } from "@/lib/dashlink/builder-types";
 import type { DashboardProject } from "@/lib/supabase/types";
 import WidgetGrid from "./WidgetGrid";
+import FilterBar from "@/components/dashlink/FilterBar";
 
 interface Props {
   project: DashboardProject;
 }
 
 export default function ProjectView({ project }: Props) {
+  const [filterState, setFilterState] = useState<FilterState>({});
+
+  const filteredData = useMemo(
+    () => applyFilterControls(project.data, project.filters, filterState),
+    [project.data, project.filters, filterState],
+  );
+
+  const handleFilterChange = (controlId: string, value: FilterValue) => {
+    setFilterState((prev) => ({ ...prev, [controlId]: value }));
+  };
+
   if (project.widgets.length === 0) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 text-center">
@@ -62,10 +79,30 @@ export default function ProjectView({ project }: Props) {
         >
           {project.name}
         </h1>
+
+        {project.filters.length > 0 && (
+          <div className="mb-6">
+            <FilterBar
+              controls={project.filters}
+              state={filterState}
+              data={project.data}
+              onChange={handleFilterChange}
+              onClear={() => setFilterState({})}
+              variant="viewer"
+              tokens={{
+                cardBg: theme.cardBg,
+                border: theme.cardBorderColor,
+                text: theme.titleColor,
+                muted: theme.mutedColor,
+              }}
+            />
+          </div>
+        )}
+
         <WidgetGrid
           widgets={project.widgets}
           layout={project.layout}
-          data={project.data}
+          data={filteredData}
           themeId={project.theme}
         />
       </main>

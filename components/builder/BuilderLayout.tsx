@@ -3,21 +3,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type {
-  DashboardFilter,
+  FilterControl,
+  FilterControlType,
+  FilterState,
+  FilterValue,
   DashWidget,
   GridItem,
 } from "@/lib/dashlink/builder-types";
 import {
-  applyDashboardFilters,
-  formatDashboardFilterLabel,
+  applyFilterControls,
+  controlLabel,
+  getCategoricalFields,
   getDatasetFields,
   getDateFields,
-  getFieldValueOptions,
+  getNumericFields,
 } from "@/lib/dashlink/filters";
 import type { DashboardProject } from "@/lib/supabase/types";
 import GridCanvas from "./GridCanvas";
 import FieldPanel from "./FieldPanel";
 import ThemeSelector from "./ThemeSelector";
+import FilterBar from "@/components/dashlink/FilterBar";
 
 interface Props {
   initialProject: DashboardProject;
@@ -46,17 +51,13 @@ function projectToPayload(project: DashboardProject) {
 export default function BuilderLayout({ initialProject }: Props) {
   const [project, setProject] = useState(initialProject);
   const sourceData = project.data;
-  const activeFilters = project.filters;
+  const filterControls = project.filters;
 
   const [title, setTitle] = useState(initialProject.name);
   const [shareCopied, setShareCopied] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [selectedFilterField, setSelectedFilterField] = useState("");
-  const [selectedFilterValue, setSelectedFilterValue] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilterField, setDateFilterField] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [previewFilterState, setPreviewFilterState] = useState<FilterState>({});
+  const [showAddFilter, setShowAddFilter] = useState(false);
   const [saveState, setSaveState] = useState<
     "idle" | "dirty" | "saving" | "saved" | "error"
   >("idle");
@@ -66,21 +67,19 @@ export default function BuilderLayout({ initialProject }: Props) {
   const saveTimerRef = useRef<number | null>(null);
   const saveControllerRef = useRef<AbortController | null>(null);
 
-  const filterFields = useMemo(
-    () => getDatasetFields(sourceData),
+  const allFields = useMemo(() => getDatasetFields(sourceData), [sourceData]);
+  const dateFields = useMemo(() => getDateFields(sourceData), [sourceData]);
+  const numericFields = useMemo(
+    () => getNumericFields(sourceData),
     [sourceData],
   );
-  const dateFields = useMemo(() => getDateFields(sourceData), [sourceData]);
-  const valueOptions = useMemo(
-    () =>
-      selectedFilterField
-        ? getFieldValueOptions(sourceData, selectedFilterField)
-        : [],
-    [sourceData, selectedFilterField],
+  const categoricalFields = useMemo(
+    () => getCategoricalFields(sourceData),
+    [sourceData],
   );
   const filteredData = useMemo(
-    () => applyDashboardFilters(sourceData, activeFilters),
-    [sourceData, activeFilters],
+    () => applyFilterControls(sourceData, filterControls, previewFilterState),
+    [sourceData, filterControls, previewFilterState],
   );
   const serializedProject = useMemo(
     () => JSON.stringify(projectToPayload(project)),
@@ -90,35 +89,6 @@ export default function BuilderLayout({ initialProject }: Props) {
   useEffect(() => {
     setTitle(project.name);
   }, [project.name]);
-
-  useEffect(() => {
-    if (filterFields.length === 0) {
-      setSelectedFilterField("");
-      setSelectedFilterValue("");
-      return;
-    }
-
-    if (!selectedFilterField || !filterFields.includes(selectedFilterField)) {
-      setSelectedFilterField(filterFields[0]);
-    }
-  }, [filterFields, selectedFilterField]);
-
-  useEffect(() => {
-    if (valueOptions.length === 0) {
-      setSelectedFilterValue("");
-      return;
-    }
-
-    if (!valueOptions.includes(selectedFilterValue)) {
-      setSelectedFilterValue(valueOptions[0]);
-    }
-  }, [selectedFilterValue, valueOptions]);
-
-  useEffect(() => {
-    if (dateFields.length > 0 && !dateFilterField) {
-      setDateFilterField(dateFields[0]);
-    }
-  }, [dateFields, dateFilterField]);
 
   const performSave = async (
     payload: string,
@@ -217,7 +187,7 @@ export default function BuilderLayout({ initialProject }: Props) {
     return () => window.removeEventListener("beforeunload", handler);
   }, [serializedProject]);
 
-  const hasFilters = activeFilters.length > 0;
+  const hasFilterControls = filterControls.length > 0;
 
   const updateProject = (
     updater: (current: DashboardProject) => DashboardProject,
@@ -287,78 +257,63 @@ export default function BuilderLayout({ initialProject }: Props) {
     }));
   };
 
-  const addFilter = (filter: DashboardFilter) => {
-    updateProject((current) => {
-      const exists = current.filters.some((existing) => {
-        if (existing.type !== filter.type) return false;
-        if (existing.type === "search" && filter.type === "search") {
-          return existing.query === filter.query;
-        }
-
-        return (
-          existing.type === "value" &&
-          filter.type === "value" &&
-          existing.field === filter.field &&
-          existing.value === filter.value
-        );
-      });
-
-      return {
-        ...current,
-        filters: exists ? current.filters : [...current.filters, filter],
-      };
-    });
-  };
-
-  const removeFilter = (filterId: string) => {
+  const addFilterControl = (control: FilterControl) => {
     updateProject((current) => ({
       ...current,
-      filters: current.filters.filter((filter) => filter.id !== filterId),
+      filters: [...current.filters, control],
     }));
   };
 
-  const clearFilters = () => {
+  const removeFilterControl = (controlId: string) => {
     updateProject((current) => ({
       ...current,
-      filters: [],
+      filters: current.filters.filter((c) => c.id !== controlId),
+    }));
+    setPreviewFilterState((prev) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [controlId]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const updateFilterControl = (
+    controlId: string,
+    patch: Partial<FilterControl>,
+  ) => {
+    updateProject((current) => ({
+      ...current,
+      filters: current.filters.map((c) =>
+        c.id === controlId ? ({ ...c, ...patch } as FilterControl) : c,
+      ),
     }));
   };
 
-  const handleAddValueFilter = () => {
-    if (!selectedFilterField || !selectedFilterValue) return;
-
-    addFilter({
-      id: createFilterId(),
-      type: "value",
-      field: selectedFilterField,
-      value: selectedFilterValue,
-    });
+  const clearFilterControls = () => {
+    updateProject((current) => ({ ...current, filters: [] }));
+    setPreviewFilterState({});
   };
 
-  const handleAddSearchFilter = () => {
-    const query = searchQuery.trim();
-    if (!query) return;
-
-    addFilter({
-      id: createFilterId(),
-      type: "search",
-      query,
-    });
-    setSearchQuery("");
+  const handlePreviewChange = (controlId: string, value: FilterValue) => {
+    setPreviewFilterState((prev) => ({ ...prev, [controlId]: value }));
   };
 
-  const handleAddDateRangeFilter = () => {
-    if (!dateFilterField || !dateFrom || !dateTo) return;
+  const handleAddControlOfType = (type: FilterControlType) => {
+    let field = "";
+    if (type === "dateRange") field = dateFields[0] ?? allFields[0] ?? "";
+    else if (type === "numberRange")
+      field = numericFields[0] ?? allFields[0] ?? "";
+    else if (type === "select" || type === "multiSelect")
+      field = categoricalFields[0] ?? allFields[0] ?? "";
 
-    addFilter({
-      id: createFilterId(),
-      type: "dateRange",
-      field: dateFilterField,
-      from: dateFrom,
-      to: dateTo,
-    });
-    setDateFrom("");
-    setDateTo("");
+    const id = createFilterId();
+    const base = { id, label: "" };
+
+    if (type === "search") {
+      addFilterControl({ ...base, type: "search" });
+    } else {
+      addFilterControl({ ...base, type, field } as FilterControl);
+    }
+    setShowAddFilter(false);
   };
 
   return (
@@ -585,136 +540,119 @@ export default function BuilderLayout({ initialProject }: Props) {
           <div className="border-t border-zinc-100 px-5 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                Filters
+                Viewer Filters
               </span>
-              <select
-                value={selectedFilterField}
-                onChange={(e) => setSelectedFilterField(e.target.value)}
-                className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
-              >
-                {filterFields.map((field) => (
-                  <option key={field} value={field}>
-                    {field}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={selectedFilterValue}
-                onChange={(e) => setSelectedFilterValue(e.target.value)}
-                disabled={valueOptions.length === 0}
-                className="min-w-32 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {valueOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={handleAddValueFilter}
-                disabled={!selectedFilterField || !selectedFilterValue}
-                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Add value filter
-              </button>
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAddSearchFilter();
-                }}
-                placeholder="Search all fields..."
-                className="min-w-44 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-zinc-400"
-              />
-              <button
-                onClick={handleAddSearchFilter}
-                disabled={!searchQuery.trim()}
-                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Add search
-              </button>
-              {hasFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700"
-                >
-                  Clear all
-                </button>
-              )}
+              <p className="text-[11px] text-zinc-500">
+                Define controls your audience sees on the published dashboard.
+              </p>
               <span className="ml-auto rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600">
                 {filteredData.length} / {sourceData.length} rows
               </span>
             </div>
 
-            {dateFields.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                  Date
-                </span>
-                <select
-                  value={dateFilterField}
-                  onChange={(e) => setDateFilterField(e.target.value)}
-                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
-                >
-                  {dateFields.map((field) => (
-                    <option key={field} value={field}>
-                      {field}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
-                />
-                <span className="text-xs text-zinc-400">→</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 outline-none focus:border-zinc-400"
-                />
-                <button
-                  onClick={handleAddDateRangeFilter}
-                  disabled={!dateFilterField || !dateFrom || !dateTo}
-                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Add date filter
-                </button>
+            {hasFilterControls && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {filterControls.map((control) => (
+                  <FilterControlChip
+                    key={control.id}
+                    control={control}
+                    fields={
+                      control.type === "dateRange"
+                        ? dateFields
+                        : control.type === "numberRange"
+                          ? numericFields
+                          : control.type === "search"
+                            ? []
+                            : allFields
+                    }
+                    onRename={(label) =>
+                      updateFilterControl(control.id, { label })
+                    }
+                    onChangeField={(field) =>
+                      control.type !== "search"
+                        ? updateFilterControl(control.id, {
+                            field,
+                          } as Partial<FilterControl>)
+                        : undefined
+                    }
+                    onRemove={() => removeFilterControl(control.id)}
+                  />
+                ))}
               </div>
             )}
 
-            {hasFilters && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {activeFilters.map((filter) => (
-                  <span
-                    key={filter.id}
-                    className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] text-zinc-600"
-                  >
-                    {formatDashboardFilterLabel(filter)}
-                    <button
-                      onClick={() => removeFilter(filter.id)}
-                      className="rounded-full text-zinc-400 transition hover:text-zinc-700"
-                      aria-label={`Remove ${formatDashboardFilterLabel(filter)}`}
-                    >
-                      <svg
-                        width="10"
-                        height="10"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2.5}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
-                    </button>
-                  </span>
-                ))}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowAddFilter((s) => !s)}
+                  className="rounded-lg border border-dashed border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-zinc-500 hover:text-zinc-900"
+                >
+                  + Add filter control
+                </button>
+                {showAddFilter && (
+                  <div className="absolute left-0 top-full z-30 mt-1 w-56 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg">
+                    {(
+                      [
+                        { type: "select", label: "Dropdown (single)" },
+                        { type: "multiSelect", label: "Multi-select" },
+                        { type: "dateRange", label: "Date range" },
+                        { type: "numberRange", label: "Number range" },
+                        { type: "search", label: "Search box" },
+                      ] as const
+                    ).map((opt) => {
+                      const disabled =
+                        (opt.type === "dateRange" && dateFields.length === 0) ||
+                        (opt.type === "numberRange" &&
+                          numericFields.length === 0) ||
+                        ((opt.type === "select" ||
+                          opt.type === "multiSelect") &&
+                          allFields.length === 0);
+                      return (
+                        <button
+                          key={opt.type}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => handleAddControlOfType(opt.type)}
+                          className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {opt.label}
+                          {disabled && (
+                            <span className="text-[10px] text-zinc-400">
+                              n/a
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {hasFilterControls && (
+                <button
+                  type="button"
+                  onClick={clearFilterControls}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700"
+                >
+                  Remove all
+                </button>
+              )}
+            </div>
+
+            {hasFilterControls && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                  Live preview
+                </p>
+                <FilterBar
+                  controls={filterControls}
+                  state={previewFilterState}
+                  data={sourceData}
+                  onChange={handlePreviewChange}
+                  onClear={() => setPreviewFilterState({})}
+                  variant="builder"
+                />
               </div>
             )}
           </div>
@@ -743,6 +681,82 @@ export default function BuilderLayout({ initialProject }: Props) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Filter control chip — inline editor for a single FilterControl
+// ---------------------------------------------------------------------------
+
+interface ChipProps {
+  control: FilterControl;
+  fields: string[];
+  onRename: (label: string) => void;
+  onChangeField: (field: string) => void;
+  onRemove: () => void;
+}
+
+function FilterControlChip({
+  control,
+  fields,
+  onRename,
+  onChangeField,
+  onRemove,
+}: ChipProps) {
+  const typeLabel: Record<FilterControlType, string> = {
+    select: "Dropdown",
+    multiSelect: "Multi-select",
+    dateRange: "Date range",
+    numberRange: "Number range",
+    search: "Search",
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs">
+      <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        {typeLabel[control.type]}
+      </span>
+      {control.type !== "search" && fields.length > 0 && (
+        <select
+          value={(control as { field: string }).field}
+          onChange={(e) => onChangeField(e.target.value)}
+          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+        >
+          {fields.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+      )}
+      <input
+        value={control.label ?? ""}
+        onChange={(e) => onRename(e.target.value)}
+        placeholder={controlLabel(control)}
+        className="w-28 rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-zinc-800 outline-none focus:border-zinc-300 focus:bg-white"
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Remove filter control"
+        className="rounded text-zinc-400 transition hover:text-zinc-700"
+      >
+        <svg
+          width="12"
+          height="12"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2.5}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M6 18L18 6M6 6l12 12"
+          />
+        </svg>
+      </button>
     </div>
   );
 }

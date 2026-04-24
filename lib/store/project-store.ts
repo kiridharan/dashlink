@@ -277,18 +277,9 @@ export const useProjectStore = create<ProjectState>()(
             if (p.id !== projectId) return p;
 
             const currentFilters = p.filters ?? [];
-            const exists = currentFilters.some((existing) => {
-              if (existing.type !== filter.type) return false;
-              if (existing.type === "search" && filter.type === "search") {
-                return existing.query === filter.query;
-              }
-              return (
-                existing.type === "value" &&
-                filter.type === "value" &&
-                existing.field === filter.field &&
-                existing.value === filter.value
-              );
-            });
+            const exists = currentFilters.some(
+              (existing) => existing.id === filter.id,
+            );
 
             return {
               ...p,

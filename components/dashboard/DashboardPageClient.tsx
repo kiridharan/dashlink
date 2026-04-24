@@ -21,6 +21,7 @@ export default function DashboardPageClient({
   const [signingOut, setSigningOut] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -42,7 +43,12 @@ export default function DashboardPageClient({
     }
   };
 
+  const handleDeleteRequest = (id: string) => {
+    setConfirmDeleteId(id);
+  };
+
   const handleDelete = async (id: string) => {
+    setConfirmDeleteId(null);
     const previous = projects;
     setProjects((current) => current.filter((project) => project.id !== id));
     setDeletingId(id);
@@ -132,7 +138,7 @@ export default function DashboardPageClient({
               <ProjectCard
                 key={project.id}
                 project={project}
-                onDelete={handleDelete}
+                onDelete={handleDeleteRequest}
                 isDeleting={deletingId === project.id}
               />
             ))}
@@ -171,6 +177,33 @@ export default function DashboardPageClient({
           </div>
         )}
       </main>
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-base font-semibold text-zinc-900">
+              Delete dashboard?
+            </h2>
+            <p className="mt-2 text-sm text-zinc-500">
+              This action cannot be undone. The dashboard and all its data will
+              be permanently removed.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDeleteId)}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -45,6 +45,7 @@ interface PublicDashboardRow {
   widgets: unknown;
   layout: unknown;
   theme: string;
+  filters: unknown;
   data: unknown;
   row_count: number;
   synced_at: string;
@@ -517,6 +518,6 @@ export async function getPublicProjectBySlug(
     layout: asLayout(row.layout),
     data: asDataset(row.data),
     theme: row.theme || DEFAULT_THEME_ID,
-    filters: [],
+    filters: asFilters(row.filters),
   } satisfies DashboardProject;
 }

@@ -14,33 +14,67 @@ export type AggregationMetric =
 export type TimeGrain = "day" | "week" | "month" | "quarter" | "year";
 export type SortDirection = "asc" | "desc";
 
-export type DashboardFilterType = "value" | "search" | "dateRange";
+// ---- Interactive filter controls (creator defines, viewer supplies values) ----
 
-export interface DashboardValueFilter {
+export type FilterControlType =
+  | "select"
+  | "multiSelect"
+  | "dateRange"
+  | "numberRange"
+  | "search";
+
+interface FilterControlBase {
   id: string;
-  type: "value";
+  label?: string;
+}
+
+export interface SelectControl extends FilterControlBase {
+  type: "select";
   field: string;
-  value: string;
 }
 
-export interface DashboardSearchFilter {
-  id: string;
-  type: "search";
-  query: string;
+export interface MultiSelectControl extends FilterControlBase {
+  type: "multiSelect";
+  field: string;
 }
 
-export interface DashboardDateRangeFilter {
-  id: string;
+export interface DateRangeControl extends FilterControlBase {
   type: "dateRange";
   field: string;
-  from: string; // ISO date string
-  to: string; // ISO date string
 }
 
-export type DashboardFilter =
-  | DashboardValueFilter
-  | DashboardSearchFilter
-  | DashboardDateRangeFilter;
+export interface NumberRangeControl extends FilterControlBase {
+  type: "numberRange";
+  field: string;
+}
+
+export interface SearchControl extends FilterControlBase {
+  type: "search";
+  /** Optional whitelist of fields to search; defaults to all */
+  fields?: string[];
+}
+
+export type FilterControl =
+  | SelectControl
+  | MultiSelectControl
+  | DateRangeControl
+  | NumberRangeControl
+  | SearchControl;
+
+export type FilterValue =
+  | { type: "select"; value: string | null }
+  | { type: "multiSelect"; values: string[] }
+  | { type: "dateRange"; from: string | null; to: string | null }
+  | { type: "numberRange"; min: number | null; max: number | null }
+  | { type: "search"; query: string };
+
+export type FilterState = Record<string, FilterValue>;
+
+/**
+ * @deprecated Use `FilterControl` instead. Kept as a type alias for callers
+ * that still reference the old name during migration.
+ */
+export type DashboardFilter = FilterControl;
 
 export interface CustomDateRange {
   startMonth: number; // 1-12, e.g. 4 for fiscal year starting in April
