@@ -174,6 +174,38 @@ export default function BuilderLayout({ initialProject }: Props) {
     await performSave(serializedProject, { versionSummary: "Manual save" });
   };
 
+  const saveImmediately = async (
+    nextProject: DashboardProject,
+    options: { versionSummary?: string } = {},
+  ) => {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const payload = JSON.stringify(projectToPayload(nextProject));
+    await performSave(payload, options);
+  };
+
+  const handleTogglePublish = async () => {
+    const next = { ...project, isPublic: !project.isPublic };
+    setProject(next);
+    await saveImmediately(next, {
+      versionSummary: next.isPublic ? "Published" : "Unpublished",
+    });
+  };
+
+  const handleOpenPreview = async () => {
+    if (!project.isPublic || project.widgets.length === 0) return;
+    // Open the tab synchronously so popup blockers don't fire, then save.
+    const win = window.open("about:blank", "_blank");
+    if (serializedProject !== lastSavedRef.current) {
+      await saveImmediately(project, { versionSummary: "Preview" });
+    }
+    const url = `${window.location.origin}/view/${project.publicSlug}`;
+    if (win) win.location.href = url;
+    else window.open(url, "_blank");
+  };
+
   // Warn before navigating away with unsaved changes.
   useEffect(() => {
     const isDirty = serializedProject !== lastSavedRef.current;
@@ -419,37 +451,35 @@ export default function BuilderLayout({ initialProject }: Props) {
               }
             />
             <button
-              onClick={() =>
-                updateProject((current) => ({
-                  ...current,
-                  isPublic: !current.isPublic,
-                }))
-              }
-              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+              onClick={handleTogglePublish}
+              disabled={saveState === "saving"}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                 project.isPublic
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300"
                   : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50"
               }`}
               title={
                 project.isPublic
-                  ? "Currently public — click to unpublish"
-                  : "Currently private — click to publish"
+                  ? "Currently public — click to unpublish (saves automatically)"
+                  : "Currently private — click to publish (saves automatically)"
               }
             >
               {project.isPublic ? "● Published" : "Publish"}
             </button>
             {project.widgets.length > 0 && (
-              <Link
-                href={`/view/${project.publicSlug}`}
-                target="_blank"
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+              <button
+                type="button"
+                onClick={handleOpenPreview}
+                disabled={!project.isPublic || saveState === "saving"}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
                   project.isPublic
                     ? "border-zinc-200 text-zinc-600 hover:border-zinc-400"
-                    : "pointer-events-none border-zinc-100 text-zinc-300"
+                    : "border-zinc-100 text-zinc-300"
                 }`}
+                title="Save and open the public viewer in a new tab"
               >
                 Preview ↗
-              </Link>
+              </button>
             )}
             <Link
               href={`/projects/${project.id}/history`}
