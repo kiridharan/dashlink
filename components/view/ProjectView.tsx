@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getTheme } from "@/lib/dashlink/themes";
 import { applyFilterControls } from "@/lib/dashlink/filters";
 import type { FilterState, FilterValue } from "@/lib/dashlink/builder-types";
 import type { DashboardProject } from "@/lib/supabase/types";
 import WidgetGrid from "./WidgetGrid";
+import ExportMenu from "./ExportMenu";
 import FilterBar from "@/components/dashlink/FilterBar";
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 
 export default function ProjectView({ project }: Props) {
   const [filterState, setFilterState] = useState<FilterState>({});
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const filteredData = useMemo(
     () => applyFilterControls(project.data, project.filters, filterState),
@@ -63,23 +65,30 @@ export default function ProjectView({ project }: Props) {
           >
             ← DashLink
           </Link>
-          <span
-            className="truncate font-mono text-xs"
-            style={{ color: theme.mutedColor }}
-            title={project.apiUrl}
-          >
-            {project.apiUrl?.replace(/^https?:\/\//, "") ?? ""}
-          </span>
+          <div className="flex items-center gap-3">
+            <span
+              className="hidden truncate font-mono text-xs sm:inline"
+              style={{ color: theme.mutedColor }}
+              title={project.apiUrl}
+            >
+              {project.apiUrl?.replace(/^https?:\/\//, "") ?? ""}
+            </span>
+            <ExportMenu
+              targetRef={exportRef}
+              filename={project.name}
+              backgroundColor={theme.pageBg}
+              data={filteredData}
+              tokens={{
+                cardBg: theme.cardBg,
+                border: theme.cardBorderColor,
+                text: theme.titleColor,
+                muted: theme.mutedColor,
+              }}
+            />
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1
-          className="mb-6 text-2xl font-bold tracking-tight"
-          style={{ color: theme.titleColor }}
-        >
-          {project.name}
-        </h1>
-
         {project.filters.length > 0 && (
           <div className="mb-6">
             <FilterBar
@@ -99,12 +108,21 @@ export default function ProjectView({ project }: Props) {
           </div>
         )}
 
-        <WidgetGrid
-          widgets={project.widgets}
-          layout={project.layout}
-          data={filteredData}
-          themeId={project.theme}
-        />
+        <div ref={exportRef} className="p-1" style={{ background: theme.pageBg }}>
+          <h1
+            className="mb-6 text-2xl font-bold tracking-tight"
+            style={{ color: theme.titleColor }}
+          >
+            {project.name}
+          </h1>
+
+          <WidgetGrid
+            widgets={project.widgets}
+            layout={project.layout}
+            data={filteredData}
+            themeId={project.theme}
+          />
+        </div>
       </main>
     </div>
   );

@@ -5,6 +5,7 @@ import type {
   AggregationMetric,
   SortDirection,
   TimeGrain,
+  YSeries,
 } from "@/lib/dashlink/builder-types";
 import type { Dataset } from "@/lib/dashlink/types";
 
@@ -202,6 +203,103 @@ export function getIntelligentMetrics(
     return ALL_METRICS.filter((m) => !m.requiresNumeric);
   }
   return ALL_METRICS;
+}
+
+// ---- Additional Y measures editor (multi-column charts) ----
+export function YSeriesEditor({
+  series,
+  fields,
+  primaryField,
+  disabled,
+  onChange,
+}: {
+  series: YSeries[];
+  /** Fields eligible as a measure (typically numeric). */
+  fields: string[];
+  /** The chart's primary Y field, excluded so it isn't plotted twice. */
+  primaryField: string;
+  disabled?: boolean;
+  onChange: (series: YSeries[]) => void;
+}) {
+  const update = (i: number, patch: Partial<YSeries>) => {
+    onChange(series.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  };
+  const remove = (i: number) => onChange(series.filter((_, idx) => idx !== i));
+  const add = () => {
+    const candidate =
+      fields.find((f) => f !== primaryField && !series.some((s) => s.field === f)) ??
+      fields.find((f) => f !== primaryField) ??
+      "";
+    onChange([...series, { field: candidate, metric: "sum" }]);
+  };
+
+  if (disabled) {
+    return (
+      <p className="mb-2.5 text-[9px] text-zinc-400">
+        Clear &quot;Second Group&quot; to add extra measures.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mb-2.5 space-y-2">
+      {series.map((s, i) => (
+        <div
+          key={i}
+          className="rounded border border-zinc-200 bg-zinc-50/60 p-2"
+        >
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <select
+              className={SEL}
+              value={s.field}
+              onChange={(e) => update(i, { field: e.target.value })}
+            >
+              {fields.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+            <input
+              type="color"
+              value={s.color ?? "#888888"}
+              onChange={(e) => update(i, { color: e.target.value })}
+              className="h-6 w-8 shrink-0 cursor-pointer rounded border border-zinc-200"
+              title="Series color"
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="shrink-0 rounded px-1.5 text-xs text-zinc-400 hover:text-red-500"
+              title="Remove series"
+            >
+              ✕
+            </button>
+          </div>
+          <select
+            className={SEL}
+            value={s.metric ?? "sum"}
+            onChange={(e) =>
+              update(i, { metric: e.target.value as AggregationMetric })
+            }
+          >
+            {ALL_METRICS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={add}
+        className="w-full rounded border border-dashed border-zinc-300 py-1 text-[10px] font-medium text-zinc-500 hover:border-zinc-400 hover:text-zinc-700"
+      >
+        + Add measure
+      </button>
+    </div>
+  );
 }
 
 export function metricFieldOptions(

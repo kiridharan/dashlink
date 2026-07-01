@@ -5,6 +5,7 @@ import type {
   DashWidget,
   LineWidget,
   TimeGrain,
+  YSeries,
 } from "@/lib/dashlink/builder-types";
 import type { Dataset } from "@/lib/dashlink/types";
 import type { FieldKind } from "./shared";
@@ -18,6 +19,7 @@ import {
   FISCAL_MONTHS,
   getIntelligentMetrics,
   metricFieldOptions,
+  YSeriesEditor,
 } from "./shared";
 
 interface Props {
@@ -173,6 +175,21 @@ export default function LineWidgetConfig({
             ))}
         </select>
       </FieldRow>
+
+      <SectionLabel>Extra measures</SectionLabel>
+      <YSeriesEditor
+        series={widget.ySeries ?? []}
+        fields={metricFieldOptions(all, numeric, widget.metric).filter(
+          (f) => f !== widget.y,
+        )}
+        primaryField={widget.y}
+        disabled={!!widget.secondGroupBy}
+        onChange={(ySeries: YSeries[]) =>
+          onUpdate({
+            ySeries: ySeries.length ? ySeries : undefined,
+          } as Partial<DashWidget>)
+        }
+      />
 
       <SectionLabel>Options</SectionLabel>
       <Toggle

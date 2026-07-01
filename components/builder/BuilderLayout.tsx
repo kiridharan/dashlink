@@ -45,6 +45,8 @@ function projectToPayload(project: DashboardProject) {
     theme: project.theme,
     filters: project.filters,
     isPublic: project.isPublic,
+    refreshEnabled: project.refreshEnabled,
+    refreshIntervalMinutes: project.refreshIntervalMinutes,
   };
 }
 
@@ -450,6 +452,28 @@ export default function BuilderLayout({ initialProject }: Props) {
                 updateProject((current) => ({ ...current, theme: themeId }))
               }
             />
+            <select
+              value={
+                project.refreshEnabled
+                  ? String(project.refreshIntervalMinutes ?? 60)
+                  : "off"
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                updateProject((current) => ({
+                  ...current,
+                  refreshEnabled: v !== "off",
+                  refreshIntervalMinutes: v === "off" ? null : Number(v),
+                }));
+              }}
+              className="rounded-lg border border-zinc-200 px-2 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400"
+              title="Automatically re-fetch this dashboard's source API on a schedule"
+            >
+              <option value="off">Auto-refresh: Off</option>
+              <option value="60">Every hour</option>
+              <option value="360">Every 6 hours</option>
+              <option value="1440">Daily</option>
+            </select>
             <button
               onClick={handleTogglePublish}
               disabled={saveState === "saving"}

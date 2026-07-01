@@ -20,6 +20,7 @@ import { formatNumber } from "@/lib/dashlink/utils";
 import {
   aggregateLineSeries,
   aggregateByMultipleGroups,
+  aggregateMultiMeasure,
   aggregationSubtitle,
   buildLineSeries,
 } from "@/lib/dashlink/aggregation";
@@ -34,6 +35,51 @@ export default function LineWidgetChart({ widget, data }: Props) {
   const cs = theme.chart;
 
   const hasSecondGroup = !!widget.secondGroupBy;
+
+  // Multi-measure path: several Y columns plotted against a shared X.
+  const extraSeries = useMemo(
+    () => (widget.ySeries ?? []).filter((s) => s.field),
+    [widget.ySeries],
+  );
+  const hasMulti = !hasSecondGroup && extraSeries.length > 0;
+
+  const measures = useMemo(
+    () =>
+      hasMulti
+        ? [
+            { field: widget.y, metric: widget.metric },
+            ...extraSeries.map((s) => ({ field: s.field, metric: s.metric })),
+          ]
+        : [],
+    [hasMulti, widget.y, widget.metric, extraSeries],
+  );
+
+  const measureColors = useMemo(
+    () =>
+      hasMulti
+        ? [
+            theme.chartColors[0],
+            ...extraSeries.map(
+              (s, i) =>
+                s.color ??
+                theme.chartColors[(i + 1) % theme.chartColors.length],
+            ),
+          ]
+        : [],
+    [hasMulti, extraSeries, theme.chartColors],
+  );
+
+  const multiData = useMemo(
+    () =>
+      hasMulti
+        ? aggregateMultiMeasure(data, widget.x, measures, {
+            timeGrain: widget.timeGrain,
+            hideNulls: widget.hideNulls,
+            fiscalStartMonth: widget.customDateRange?.startMonth,
+          })
+        : [],
+    [hasMulti, data, widget, measures],
+  );
 
   // Single group path
   const singleGroupData = useMemo(() => {
@@ -77,7 +123,11 @@ export default function LineWidgetChart({ widget, data }: Props) {
     return { pivotedData: Array.from(byX.values()), seriesKeys: sKeys };
   }, [data, widget, hasSecondGroup]);
 
-  const chartData = hasSecondGroup ? pivotedData : singleGroupData;
+  const chartData = hasSecondGroup
+    ? pivotedData
+    : hasMulti
+      ? multiData
+      : singleGroupData;
 
   const subtitle = aggregationSubtitle({
     metric: widget.metric,
@@ -118,7 +168,7 @@ export default function LineWidgetChart({ widget, data }: Props) {
       </p>
       <div className="flex-1">
         <ResponsiveContainer width="100%" height="100%">
-          {cs.lineArea && !hasSecondGroup ? (
+          {cs.lineArea && !hasSecondGroup && !hasMulti ? (
             <AreaChart
               data={chartData}
               margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
@@ -207,6 +257,25 @@ export default function LineWidgetChart({ widget, data }: Props) {
                                 i % theme.chartColors.length
                               ],
                             }
+                          : false
+                      }
+                    />
+                  ))}
+                </>
+              ) : hasMulti ? (
+                <>
+                  <Legend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                  {measures.map((m, i) => (
+                    <Line
+                      key={m.field}
+                      type={cs.lineType}
+                      dataKey={m.field}
+                      name={m.field}
+                      stroke={measureColors[i]}
+                      strokeWidth={cs.lineStrokeWidth}
+                      dot={
+                        cs.lineDot
+                          ? { r: cs.lineDotRadius, fill: measureColors[i] }
                           : false
                       }
                     />

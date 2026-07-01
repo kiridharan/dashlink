@@ -19,6 +19,7 @@ import { formatNumber } from "@/lib/dashlink/utils";
 import {
   aggregateByGroup,
   aggregateByMultipleGroups,
+  aggregateMultiMeasure,
   aggregationSubtitle,
 } from "@/lib/dashlink/aggregation";
 
@@ -32,6 +33,49 @@ export default function BarWidgetChart({ widget, data }: Props) {
   const cs = theme.chart;
 
   const hasSecondGroup = !!widget.secondGroupBy;
+
+  // Multi-measure path: several Y columns as grouped bars against a shared X.
+  const extraSeries = useMemo(
+    () => (widget.ySeries ?? []).filter((s) => s.field),
+    [widget.ySeries],
+  );
+  const hasMulti = !hasSecondGroup && extraSeries.length > 0;
+
+  const measures = useMemo(
+    () =>
+      hasMulti
+        ? [
+            { field: widget.y, metric: widget.metric },
+            ...extraSeries.map((s) => ({ field: s.field, metric: s.metric })),
+          ]
+        : [],
+    [hasMulti, widget.y, widget.metric, extraSeries],
+  );
+
+  const measureColors = useMemo(
+    () =>
+      hasMulti
+        ? [
+            theme.chartColors[0],
+            ...extraSeries.map(
+              (s, i) =>
+                s.color ??
+                theme.chartColors[(i + 1) % theme.chartColors.length],
+            ),
+          ]
+        : [],
+    [hasMulti, extraSeries, theme.chartColors],
+  );
+
+  const multiData = useMemo(
+    () =>
+      hasMulti
+        ? aggregateMultiMeasure(data, widget.x, measures, {
+            hideNulls: widget.hideNulls,
+          })
+        : [],
+    [hasMulti, data, widget, measures],
+  );
 
   // Single group path
   const singleGroupData = useMemo(() => {
@@ -81,7 +125,11 @@ export default function BarWidgetChart({ widget, data }: Props) {
     };
   }, [data, widget, hasSecondGroup]);
 
-  const chartData = hasSecondGroup ? pivotedData : singleGroupData;
+  const chartData = hasSecondGroup
+    ? pivotedData
+    : hasMulti
+      ? multiData
+      : singleGroupData;
 
   const subtitle = aggregationSubtitle({
     metric: widget.metric,
@@ -158,6 +206,19 @@ export default function BarWidgetChart({ widget, data }: Props) {
                         ? (cs.barRadius as [number, number, number, number])
                         : undefined
                     }
+                  />
+                ))}
+              </>
+            ) : hasMulti ? (
+              <>
+                <Legend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                {measures.map((m, i) => (
+                  <Bar
+                    key={m.field}
+                    dataKey={m.field}
+                    name={m.field}
+                    fill={measureColors[i]}
+                    radius={cs.barRadius}
                   />
                 ))}
               </>

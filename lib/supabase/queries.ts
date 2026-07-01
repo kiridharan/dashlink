@@ -28,6 +28,9 @@ interface ProjectRow {
   layout: unknown;
   theme: string;
   filters: unknown;
+  refresh_enabled: boolean;
+  refresh_interval_minutes: number | null;
+  last_refreshed_at: string | null;
 }
 
 interface SnapshotRow {
@@ -104,6 +107,9 @@ function mapProjectRow(
     data: asDataset(snapshot?.data),
     theme: row.theme || DEFAULT_THEME_ID,
     filters: asFilters(row.filters),
+    refreshEnabled: row.refresh_enabled ?? false,
+    refreshIntervalMinutes: row.refresh_interval_minutes ?? null,
+    lastRefreshedAt: row.last_refreshed_at ?? null,
   };
 }
 
@@ -145,6 +151,8 @@ function toProjectPayload(input: DashboardProjectInput) {
     theme: input.theme || DEFAULT_THEME_ID,
     filters: input.filters,
     is_public: input.isPublic ?? true,
+    refresh_enabled: input.refreshEnabled ?? false,
+    refresh_interval_minutes: input.refreshIntervalMinutes ?? null,
   };
 }
 
@@ -156,7 +164,7 @@ export async function listProjects(client: SupabaseClient) {
   const { data, error } = await client
     .from("projects")
     .select(
-      "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters",
+      "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters, refresh_enabled, refresh_interval_minutes, last_refreshed_at",
     )
     .order("created_at", { ascending: false });
 
@@ -180,7 +188,7 @@ export async function getProjectById(
   const { data, error } = await client
     .from("projects")
     .select(
-      "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters",
+      "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters, refresh_enabled, refresh_interval_minutes, last_refreshed_at",
     )
     .eq("id", projectId)
     .maybeSingle();
@@ -231,7 +239,7 @@ export async function createProject(
         public_slug: createPublicSlug(),
       })
       .select(
-        "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters",
+        "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters, refresh_enabled, refresh_interval_minutes, last_refreshed_at",
       )
       .single();
 
@@ -274,7 +282,7 @@ export async function updateProject(
     .update(toProjectPayload(input))
     .eq("id", projectId)
     .select(
-      "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters",
+      "id, owner_id, public_slug, is_public, name, api_url, auth_config, data_path, created_at, updated_at, config, widgets, layout, theme, filters, refresh_enabled, refresh_interval_minutes, last_refreshed_at",
     )
     .single();
 
@@ -519,5 +527,8 @@ export async function getPublicProjectBySlug(
     data: asDataset(row.data),
     theme: row.theme || DEFAULT_THEME_ID,
     filters: asFilters(row.filters),
+    refreshEnabled: false,
+    refreshIntervalMinutes: null,
+    lastRefreshedAt: null,
   } satisfies DashboardProject;
 }

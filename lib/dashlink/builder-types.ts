@@ -80,6 +80,19 @@ export interface CustomDateRange {
   startMonth: number; // 1-12, e.g. 4 for fiscal year starting in April
 }
 
+/**
+ * An additional measure plotted alongside a chart's primary Y value.
+ * Enables plotting several distinct columns (e.g. revenue + profit) on one
+ * line/bar chart. Distinct from `secondGroupBy`, which pivots a single measure
+ * across the values of another dimension.
+ */
+export interface YSeries {
+  field: string;
+  metric?: AggregationMetric;
+  /** Optional per-series color override; falls back to the theme palette. */
+  color?: string;
+}
+
 export interface AggregateOptions {
   metric?: AggregationMetric;
   groupBy?: string;
@@ -125,6 +138,8 @@ export interface LineWidget {
   hideNulls?: boolean;
   customDateRange?: CustomDateRange;
   secondGroupBy?: string;
+  /** Extra measures plotted alongside `y`. Mutually exclusive with secondGroupBy. */
+  ySeries?: YSeries[];
 }
 
 export interface BarWidget {
@@ -140,6 +155,8 @@ export interface BarWidget {
   showOtherBucket?: boolean;
   hideNulls?: boolean;
   secondGroupBy?: string;
+  /** Extra measures plotted alongside `y`. Mutually exclusive with secondGroupBy. */
+  ySeries?: YSeries[];
 }
 
 export interface PieWidget {

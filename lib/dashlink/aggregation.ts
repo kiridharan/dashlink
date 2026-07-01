@@ -273,6 +273,52 @@ export function aggregateByMultipleGroups(
   });
 }
 
+// ---- Multi-measure aggregation (several Y columns, shared X) ----
+
+export interface MeasureSpec {
+  field: string;
+  metric?: AggregationMetric;
+}
+
+/**
+ * Group rows by an X field (optionally time-bucketed) and compute each measure
+ * within every group. Produces one pivoted row per X value with a column per
+ * measure field — the shape Recharts needs to draw multiple <Line>/<Bar>.
+ */
+export function aggregateMultiMeasure(
+  data: Dataset,
+  xField: string,
+  measures: MeasureSpec[],
+  options?: {
+    timeGrain?: TimeGrain;
+    hideNulls?: boolean;
+    fiscalStartMonth?: number;
+  },
+): Dataset {
+  let filteredData = data;
+  if (options?.hideNulls) {
+    filteredData = filteredData.filter((row) => !isNullish(row[xField]));
+  }
+
+  const grouped = new Map<string, Dataset>();
+  for (const row of filteredData) {
+    const key = options?.timeGrain
+      ? bucketByTimeGrain(row[xField], options.timeGrain, options.fiscalStartMonth)
+      : String(row[xField] ?? "(empty)");
+    const current = grouped.get(key) ?? [];
+    current.push(row);
+    grouped.set(key, current);
+  }
+
+  return Array.from(grouped.entries()).map(([key, rows]) => {
+    const out: Record<string, DataValue> = { [xField]: key };
+    for (const m of measures) {
+      out[m.field] = computeMetric(rows, m.field, m.metric);
+    }
+    return out;
+  });
+}
+
 export function buildLineSeries(
   data: Dataset,
   xField: string,

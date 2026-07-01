@@ -77,6 +77,12 @@ export async function PATCH(
       ? (body.filters as DashboardProjectInput["filters"])
       : [],
     isPublic: typeof body.isPublic === "boolean" ? body.isPublic : false,
+    refreshEnabled:
+      typeof body.refreshEnabled === "boolean" ? body.refreshEnabled : false,
+    refreshIntervalMinutes:
+      typeof body.refreshIntervalMinutes === "number"
+        ? body.refreshIntervalMinutes
+        : null,
   };
 
   try {

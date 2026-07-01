@@ -26,6 +26,10 @@ export interface DashboardProject {
   data: Dataset;
   theme: string;
   filters: FilterControl[];
+  /** Scheduled refresh: cadence in minutes (null/undefined = manual only). */
+  refreshEnabled: boolean;
+  refreshIntervalMinutes: number | null;
+  lastRefreshedAt: string | null;
 }
 
 export interface DashboardProjectInput {
@@ -40,4 +44,6 @@ export interface DashboardProjectInput {
   theme: string;
   filters: FilterControl[];
   isPublic?: boolean;
+  refreshEnabled?: boolean;
+  refreshIntervalMinutes?: number | null;
 }

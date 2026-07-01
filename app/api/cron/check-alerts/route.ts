@@ -9,24 +9,10 @@ import {
 import { computeMetric } from "@/lib/dashlink/aggregation";
 import type { DashWidget, KpiWidget } from "@/lib/dashlink/builder-types";
 import type { AuthConfig, Dataset } from "@/lib/dashlink/types";
-import { flattenJsonToDataset } from "@/lib/dashlink/flatten";
+import { fetchRemoteDataset } from "@/lib/dashlink/fetch-remote";
+import { isCronAuthorized } from "@/lib/cron";
 
 export const dynamic = "force-dynamic";
-
-// Authentication: require either CRON_SECRET header match, or Vercel Cron's
-// own request header (when configured via vercel.json).
-function isAuthorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    // In dev allow anonymous so it's testable without env.
-    return process.env.NODE_ENV !== "production";
-  }
-  const header = req.headers.get("authorization");
-  if (header === `Bearer ${secret}`) return true;
-  // Vercel Cron sends this header when triggered by the platform.
-  if (req.headers.get("x-vercel-cron") === "1") return true;
-  return false;
-}
 
 function compare(
   operator: AlertOperator,
@@ -67,43 +53,6 @@ function operatorLabel(op: AlertOperator): string {
       return "=";
     case "change_pct":
       return "% change >=";
-  }
-}
-
-async function fetchProjectData(
-  apiUrl: string,
-  authConfig: AuthConfig,
-): Promise<Dataset> {
-  if (!apiUrl || !apiUrl.startsWith("http")) return [];
-
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (authConfig.type === "bearer" && authConfig.token) {
-    headers["Authorization"] = `Bearer ${authConfig.token}`;
-  } else if (authConfig.type === "apikey" && authConfig.token) {
-    headers[authConfig.headerName?.trim() || "X-API-Key"] = authConfig.token;
-  } else if (
-    authConfig.type === "basic" &&
-    authConfig.username &&
-    authConfig.password
-  ) {
-    headers["Authorization"] =
-      "Basic " +
-      Buffer.from(`${authConfig.username}:${authConfig.password}`).toString(
-        "base64",
-      );
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const res = await fetch(apiUrl, { headers, signal: controller.signal });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return flattenJsonToDataset(json).slice(0, 5000);
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -180,7 +129,7 @@ async function notify(
 }
 
 export async function GET(req: Request) {
-  if (!isAuthorized(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -214,7 +163,7 @@ export async function GET(req: Request) {
   for (const [projectId, group] of byProject) {
     const { data: project } = await admin
       .from("projects")
-      .select("api_url, auth_config, widgets")
+      .select("api_url, auth_config, data_path, widgets")
       .eq("id", projectId)
       .maybeSingle();
 
@@ -237,9 +186,10 @@ export async function GET(req: Request) {
     ) as DashWidget[];
 
     // Try refetching live data first; fall back to stored snapshot.
-    let dataset = await fetchProjectData(
+    let dataset = await fetchRemoteDataset(
       project.api_url ?? "",
       (project.auth_config ?? { type: "none" }) as AuthConfig,
+      project.data_path ?? "",
     );
 
     if (dataset.length === 0) {
