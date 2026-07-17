@@ -21,6 +21,10 @@ import {
 import type { DashboardProject } from "@/lib/supabase/types";
 import GridCanvas from "./GridCanvas";
 import FieldPanel from "./FieldPanel";
+import AiGeneratePanel, {
+  type AiDashboardSpec,
+  type AiDashboardModification,
+} from "./AiGeneratePanel";
 import ThemeSelector from "./ThemeSelector";
 import FilterBar from "@/components/dashlink/FilterBar";
 
@@ -64,6 +68,12 @@ export default function BuilderLayout({ initialProject }: Props) {
     "idle" | "dirty" | "saving" | "saved" | "error"
   >("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [aiApplying, setAiApplying] = useState(false);
+  const [aiAnimatingIds, setAiAnimatingIds] = useState<Set<string>>(new Set());
+  const [aiPendingItems, setAiPendingItems] = useState<GridItem[]>([]);
+  const [aiRemovingIds, setAiRemovingIds] = useState<Set<string>>(new Set());
+  const [aiProgress, setAiProgress] = useState({ placed: 0, total: 0 });
+  const aiTimersRef = useRef<number[]>([]);
   const hasMountedRef = useRef(false);
   const lastSavedRef = useRef(JSON.stringify(projectToPayload(initialProject)));
   const saveTimerRef = useRef<number | null>(null);
@@ -87,6 +97,8 @@ export default function BuilderLayout({ initialProject }: Props) {
     () => JSON.stringify(projectToPayload(project)),
     [project],
   );
+  const serializedProjectRef = useRef(serializedProject);
+  serializedProjectRef.current = serializedProject;
 
   useEffect(() => {
     setTitle(project.name);
@@ -125,8 +137,15 @@ export default function BuilderLayout({ initialProject }: Props) {
 
       const nextProject = json.project as DashboardProject;
       lastSavedRef.current = JSON.stringify(projectToPayload(nextProject));
-      setProject(nextProject);
-      setSaveState("saved");
+      // Only adopt the server copy if local state hasn't changed since this
+      // save was sent — otherwise we'd wipe edits made while the request was
+      // in flight (e.g. AI widgets placed during the staggered animation).
+      if (serializedProjectRef.current === payload) {
+        setProject(nextProject);
+        setSaveState("saved");
+      } else {
+        setSaveState("dirty");
+      }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         return;
@@ -330,6 +349,108 @@ export default function BuilderLayout({ initialProject }: Props) {
   const handlePreviewChange = (controlId: string, value: FilterValue) => {
     setPreviewFilterState((prev) => ({ ...prev, [controlId]: value }));
   };
+
+  // Replace the canvas with an AI-generated dashboard, placing widgets one by
+  // one so the dashboard visibly "builds itself".
+  const handleApplyAiDashboard = (spec: AiDashboardSpec) => {
+    aiTimersRef.current.forEach((t) => window.clearTimeout(t));
+    aiTimersRef.current = [];
+    setAiApplying(true);
+    setAiAnimatingIds(new Set(spec.widgets.map((w) => w.id)));
+    setAiPendingItems(spec.layout);
+    setAiProgress({ placed: 0, total: spec.widgets.length });
+
+    if (spec.mode === "add") {
+      // Keep the canvas; only merge in filters that don't duplicate an
+      // existing control on the same field.
+      updateProject((current) => {
+        const existing = new Set(
+          current.filters.map(
+            (f) => `${f.type}:${"field" in f ? f.field : ""}`,
+          ),
+        );
+        const newFilters = spec.filters.filter(
+          (f) => !existing.has(`${f.type}:${"field" in f ? f.field : ""}`),
+        );
+        return { ...current, filters: [...current.filters, ...newFilters] };
+      });
+    } else {
+      setPreviewFilterState({});
+      updateProject((current) => ({
+        ...current,
+        name: spec.name || current.name,
+        widgets: [],
+        layout: [],
+        filters: spec.filters,
+      }));
+    }
+
+    const STEP_MS = 320;
+    spec.widgets.forEach((widget, idx) => {
+      const timer = window.setTimeout(() => {
+        updateProject((current) => ({
+          ...current,
+          widgets: [...current.widgets, widget],
+          layout: [...current.layout, spec.layout[idx]],
+        }));
+        setAiPendingItems((prev) => prev.slice(1));
+        setAiProgress({ placed: idx + 1, total: spec.widgets.length });
+      }, STEP_MS * (idx + 1));
+      aiTimersRef.current.push(timer);
+    });
+
+    const doneTimer = window.setTimeout(
+      () => {
+        setAiApplying(false);
+        setAiAnimatingIds(new Set());
+        setAiPendingItems([]);
+      },
+      STEP_MS * (spec.widgets.length + 1) + 600,
+    );
+    aiTimersRef.current.push(doneTimer);
+  };
+
+  // Apply AI edits immediately (with a pop flash) and removals after a short
+  // pop-out animation. Removals were already confirmed by the user in chat.
+  const handleAiModify = (mod: AiDashboardModification) => {
+    if (mod.edits.length > 0) {
+      updateProject((current) => ({
+        ...current,
+        widgets: current.widgets.map((w) => {
+          const edit = mod.edits.find((e) => e.id === w.id);
+          return edit ? ({ ...w, ...edit.patch } as DashWidget) : w;
+        }),
+        layout: current.layout.map((item) => {
+          const edit = mod.edits.find((e) => e.id === item.i);
+          return edit?.layoutPatch ? { ...item, ...edit.layoutPatch } : item;
+        }),
+      }));
+      setAiAnimatingIds(new Set(mod.edits.map((e) => e.id)));
+      const flashTimer = window.setTimeout(
+        () => setAiAnimatingIds(new Set()),
+        600,
+      );
+      aiTimersRef.current.push(flashTimer);
+    }
+
+    if (mod.remove.length > 0) {
+      setAiRemovingIds(new Set(mod.remove));
+      const removeTimer = window.setTimeout(() => {
+        const gone = new Set(mod.remove);
+        updateProject((current) => ({
+          ...current,
+          widgets: current.widgets.filter((w) => !gone.has(w.id)),
+          layout: current.layout.filter((item) => !gone.has(item.i)),
+        }));
+        setAiRemovingIds(new Set());
+      }, 380);
+      aiTimersRef.current.push(removeTimer);
+    }
+  };
+
+  useEffect(() => {
+    return () => aiTimersRef.current.forEach((t) => window.clearTimeout(t));
+  }, []);
 
   const handleAddControlOfType = (type: FilterControlType) => {
     let field = "";
@@ -722,7 +843,45 @@ export default function BuilderLayout({ initialProject }: Props) {
           onAdd={handleAddWidget}
         />
 
-        <div className="flex-1 overflow-auto">
+        <div className="relative flex-1 overflow-auto">
+          {aiApplying && (
+            <div className="pointer-events-none sticky top-2 z-30 flex justify-center">
+              <div className="flex items-center gap-2.5 rounded-full border border-indigo-200 bg-white/95 px-4 py-2 shadow-lg shadow-indigo-500/10 backdrop-blur">
+                <span className="ai-build-spinner" aria-hidden />
+                <span className="text-xs font-semibold text-zinc-800">
+                  Building your dashboard…
+                </span>
+                <span className="tabular-nums text-xs text-zinc-400">
+                  {aiProgress.placed}/{aiProgress.total}
+                </span>
+                <span className="h-1 w-24 overflow-hidden rounded-full bg-zinc-100">
+                  <span
+                    className="block h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-300 ease-out"
+                    style={{
+                      width: `${
+                        aiProgress.total
+                          ? (aiProgress.placed / aiProgress.total) * 100
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </span>
+              </div>
+              <style>{`
+                .ai-build-spinner {
+                  width: 14px;
+                  height: 14px;
+                  border-radius: 999px;
+                  border: 2px solid #c7d2fe;
+                  border-top-color: #6366f1;
+                  animation: ai-build-spin 0.7s linear infinite;
+                }
+                @keyframes ai-build-spin {
+                  to { transform: rotate(360deg); }
+                }
+              `}</style>
+            </div>
+          )}
           <GridCanvas
             widgets={project.widgets}
             layout={project.layout}
@@ -732,9 +891,20 @@ export default function BuilderLayout({ initialProject }: Props) {
             onRemoveWidget={handleRemoveWidget}
             onResizeWidget={handleResizeWidget}
             onUpdateWidget={handleUpdateWidget}
+            animatingIds={aiAnimatingIds}
+            pendingItems={aiApplying ? aiPendingItems : undefined}
+            removingIds={aiRemovingIds}
           />
         </div>
       </div>
+
+      <AiGeneratePanel
+        data={sourceData}
+        currentWidgets={project.widgets}
+        onApply={handleApplyAiDashboard}
+        onModify={handleAiModify}
+        isApplying={aiApplying}
+      />
     </div>
   );
 }

@@ -76,6 +76,8 @@ interface TileProps {
   cardRadius: number;
   cardShadow: string;
   isSelected: boolean;
+  animateIn: boolean;
+  animateOut: boolean;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
   onResize: (id: string, height: number) => void;
@@ -91,6 +93,8 @@ function SortableTile({
   cardRadius,
   cardShadow,
   isSelected,
+  animateIn,
+  animateOut,
   onSelect,
   onRemove,
   onResize,
@@ -115,7 +119,7 @@ function SortableTile({
     <div
       ref={setNodeRef}
       style={style}
-      className={`${spanClass(gridItem.span)} group`}
+      className={`${spanClass(gridItem.span)} group${animateIn ? " widget-pop-in" : ""}${animateOut ? " widget-pop-out" : ""}`}
     >
       <Resizable
         size={{ width: "100%", height: gridItem.height }}
@@ -263,6 +267,23 @@ export interface CanvasProps {
   onRemoveWidget: (id: string) => void;
   onResizeWidget: (id: string, height: number) => void;
   onUpdateWidget: (widgetId: string, patch: Partial<DashWidget>) => void;
+  /** Widget ids that should pop in with the build animation (AI generation) */
+  animatingIds?: Set<string>;
+  /** Layout slots for AI widgets not yet placed — rendered as shimmering skeletons */
+  pendingItems?: GridItem[];
+  /** Widget ids about to be removed by AI — play the pop-out animation */
+  removingIds?: Set<string>;
+}
+
+function SkeletonTile({ item, delay }: { item: GridItem; delay: number }) {
+  return (
+    <div
+      className={`${spanClass(item.span)} ai-skeleton-tile`}
+      style={{ height: item.height, animationDelay: `${delay}s` }}
+    >
+      <div className="ai-skeleton-shimmer" />
+    </div>
+  );
 }
 
 export default function GridCanvas({
@@ -274,6 +295,9 @@ export default function GridCanvas({
   onRemoveWidget,
   onResizeWidget,
   onUpdateWidget,
+  animatingIds,
+  pendingItems,
+  removingIds,
 }: CanvasProps) {
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
@@ -291,7 +315,9 @@ export default function GridCanvas({
     setSelectedWidgetId((prev) => (prev === id ? null : id));
   };
 
-  if (widgets.length === 0) {
+  const pending = pendingItems ?? [];
+
+  if (widgets.length === 0 && pending.length === 0) {
     return (
       <div
         className="flex h-full min-h-100 items-center justify-center rounded-2xl border-2 border-dashed"
@@ -359,6 +385,63 @@ export default function GridCanvas({
           .group:hover .resize-handle-bottom::after {
             opacity: 1;
           }
+          .widget-pop-out {
+            animation: widget-pop-out 0.35s ease-in both;
+            pointer-events: none;
+          }
+          @keyframes widget-pop-out {
+            0% {
+              opacity: 1;
+              transform: scale(1);
+            }
+            100% {
+              opacity: 0;
+              transform: translateY(10px) scale(0.9);
+            }
+          }
+          .widget-pop-in {
+            animation: widget-pop-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .ai-skeleton-tile {
+            position: relative;
+            overflow: hidden;
+            border-radius: 12px;
+            border: 1.5px dashed #c7d2fe;
+            background: linear-gradient(135deg, #eef2ff, #faf5ff);
+            animation: ai-skeleton-pulse 1.6s ease-in-out infinite both;
+          }
+          .ai-skeleton-shimmer {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+              100deg,
+              transparent 30%,
+              rgba(255, 255, 255, 0.85) 50%,
+              transparent 70%
+            );
+            transform: translateX(-100%);
+            animation: ai-skeleton-sweep 1.4s ease-in-out infinite;
+          }
+          @keyframes ai-skeleton-pulse {
+            0%, 100% { opacity: 0.55; }
+            50% { opacity: 1; }
+          }
+          @keyframes ai-skeleton-sweep {
+            to { transform: translateX(100%); }
+          }
+          @keyframes widget-pop-in {
+            0% {
+              opacity: 0;
+              transform: translateY(14px) scale(0.94);
+            }
+            60% {
+              opacity: 1;
+            }
+            100% {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
         `}</style>
 
           <DndContext
@@ -387,12 +470,21 @@ export default function GridCanvas({
                       cardRadius={theme.chart.cardRadius}
                       cardShadow={theme.chart.cardShadow}
                       isSelected={selectedWidgetId === widget.id}
+                      animateIn={animatingIds?.has(widget.id) ?? false}
+                      animateOut={removingIds?.has(widget.id) ?? false}
                       onSelect={handleSelectWidget}
                       onRemove={onRemoveWidget}
                       onResize={onResizeWidget}
                     />
                   );
                 })}
+                {pending.map((item, idx) => (
+                  <SkeletonTile
+                    key={`pending-${item.i}`}
+                    item={item}
+                    delay={idx * 0.12}
+                  />
+                ))}
               </div>
             </SortableContext>
 
