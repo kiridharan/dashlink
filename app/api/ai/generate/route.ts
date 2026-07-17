@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isAiDashboardEnabled } from "@/lib/dashlink/ai-access";
 import type {
   AggregationMetric,
   DashWidget,
@@ -416,6 +417,13 @@ export async function POST(req: Request) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!(await isAiDashboardEnabled(supabase, user.id))) {
+    return NextResponse.json(
+      { error: "AI dashboard generation is not enabled for your account." },
+      { status: 403 },
+    );
   }
 
   const apiKey = process.env.AI_GATEWAY_API_KEY ?? process.env.OPENAI_API_KEY;

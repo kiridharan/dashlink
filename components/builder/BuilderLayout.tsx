@@ -30,6 +30,8 @@ import FilterBar from "@/components/dashlink/FilterBar";
 
 interface Props {
   initialProject: DashboardProject;
+  /** DB-backed feature flag: whether this user can use the AI generator */
+  aiEnabled?: boolean;
 }
 
 function createFilterId() {
@@ -54,7 +56,7 @@ function projectToPayload(project: DashboardProject) {
   };
 }
 
-export default function BuilderLayout({ initialProject }: Props) {
+export default function BuilderLayout({ initialProject, aiEnabled }: Props) {
   const [project, setProject] = useState(initialProject);
   const sourceData = project.data;
   const filterControls = project.filters;
@@ -898,13 +900,15 @@ export default function BuilderLayout({ initialProject }: Props) {
         </div>
       </div>
 
-      <AiGeneratePanel
-        data={sourceData}
-        currentWidgets={project.widgets}
-        onApply={handleApplyAiDashboard}
-        onModify={handleAiModify}
-        isApplying={aiApplying}
-      />
+      {aiEnabled && (
+        <AiGeneratePanel
+          data={sourceData}
+          currentWidgets={project.widgets}
+          onApply={handleApplyAiDashboard}
+          onModify={handleAiModify}
+          isApplying={aiApplying}
+        />
+      )}
     </div>
   );
 }
